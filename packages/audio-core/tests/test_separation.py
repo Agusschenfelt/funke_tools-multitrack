@@ -31,6 +31,14 @@ def test_unknown_device_raises(tmp_path: Path) -> None:
         separate(audio, "x.wav", out_dir=tmp_path, device="tpu")
 
 
+def test_negative_shifts_rejected_but_zero_passes_validation(tmp_path: Path) -> None:
+    with pytest.raises(SeparationError, match="shifts"):
+        separate(np.zeros((2, 10), dtype=np.float32), "x.wav", out_dir=tmp_path, shifts=-1)
+    # shifts=0 gets past the shifts check and fails on the audio-shape check that follows it.
+    with pytest.raises(SeparationError, match="expected non-empty audio"):
+        separate(np.zeros((2, 0), dtype=np.float32), "x.wav", out_dir=tmp_path, shifts=0)
+
+
 def test_registry_matches_models_md() -> None:
     text = MODELS_MD.read_text(encoding="utf-8")
     for name, stems in ALLOWED_MODELS.items():

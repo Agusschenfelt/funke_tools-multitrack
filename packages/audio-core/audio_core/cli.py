@@ -88,7 +88,9 @@ def separate(
     out: OutOpt,
     model: Annotated[str, typer.Option(help="Separation model name.")] = DEFAULT_MODEL,
     device: Annotated[str, typer.Option(help="Torch device: cpu, cuda or mps.")] = "cpu",
-    shifts: Annotated[int, typer.Option(help="Random shifts averaged (1 = fastest).")] = 1,
+    shifts: Annotated[
+        int, typer.Option(help="Random shifts averaged (0 = fastest, deterministic).")
+    ] = 1,
 ) -> None:
     """Separate stems; writes one WAV per stem and stemset.json."""
     audio = _run_or_exit(lambda: decode(input), "decode")

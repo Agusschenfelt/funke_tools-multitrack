@@ -69,8 +69,9 @@ def separate(
         )
     if device not in DEVICES:
         raise SeparationError(f"unknown device {device!r}; choose one of {list(DEVICES)}")
-    if shifts < 1:
-        raise SeparationError("shifts must be at least 1")
+    # shifts=0 is the only deterministic setting: Demucs draws random shifts when shifts > 0.
+    if shifts < 0:
+        raise SeparationError("shifts must be 0 or greater")
     if audio.ndim != 2 or audio.shape[0] != CHANNELS or audio.shape[1] == 0:
         raise SeparationError(f"expected non-empty audio shaped (2, n_samples), got {audio.shape}")
 
