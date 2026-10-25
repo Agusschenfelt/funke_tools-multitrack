@@ -26,6 +26,7 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 - `beat_this` no detecta 3/4 en clicks sintéticos. Falta probarlo con una grabación real en 3/4.
 - La detección de secciones se hace sin modelos entrenados (ver abajo). Los cortes suelen salir bien, pero los nombres (verso, coro) van a errar seguido y se corrigen en el editor.
+- La segmentación agrupa sobre ventanas de 4 compases y después ajusta cada corte hasta 2 compases. Ese ajuste se afinó con una canción sintética limpia (los 7 cortes salieron exactos); con canciones reales todavía no se midió.
 
 ### Separación
 
