@@ -22,6 +22,7 @@ dependencies = [
     "numba<0.62",  # cap: no wheel for this Intel Mac in newer releases
     "llvmlite<0.45",  # cap: numba 0.61 requires llvmlite 0.44.x; newer has no wheel here
     "demucs>=4.1.0",
+    "soxr>=1.1.0",
 ]
 
 [project.scripts]
