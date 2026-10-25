@@ -244,7 +244,7 @@ def test_secciones_and_tempo_map(inputs: Inputs) -> None:
     with zipfile.ZipFile(result.zip_path) as archive:
         text = archive.read("Secciones.txt").decode("utf-8")
         midi = mido.MidiFile(file=io.BytesIO(archive.read("Tempo.mid")))
-    assert text.splitlines() == ["Estrofa\tbar 3\t00:04.000", "Coro\tbar 5\t00:08.000"]
+    assert text.splitlines() == ["Verso\tbar 3\t00:04.000", "Coro\tbar 5\t00:08.000"]
     messages = [m for m in midi.tracks[0] if m.is_meta]
     tempos = [m for m in messages if m.type == "set_tempo"]
     assert len(tempos) == 5  # count-in bar plus four detected bars

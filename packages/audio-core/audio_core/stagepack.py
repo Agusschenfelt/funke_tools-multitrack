@@ -60,8 +60,8 @@ SPLIT_NAMES = ("Split Track", "Split Track")
 SECTION_LABELS: dict[str, dict[SectionName, str]] = {
     "es": {
         SectionName.INTRO: "Intro",
-        SectionName.VERSE: "Estrofa",
-        SectionName.VERSE_2: "Estrofa 2",
+        SectionName.VERSE: "Verso",
+        SectionName.VERSE_2: "Verso 2",
         SectionName.PRE_CHORUS: "Pre-coro",
         SectionName.CHORUS: "Coro",
         SectionName.BRIDGE: "Puente",
