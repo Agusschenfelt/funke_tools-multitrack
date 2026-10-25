@@ -54,12 +54,14 @@ Heavy imports (librosa) stay inside the functions that need them, as in ``analys
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 
 from audio_core.analysis import _package_version, to_mono
 from audio_core.constants import SAMPLE_RATE
-from audio_core.models import Grid, ModelVersion, Section, SectionName, Sections
+from audio_core.models import Grid, ModelVersion, Section, SectionName, Sections, StemSet
 
 HEURISTICS_VERSION = "1"
 
@@ -561,6 +563,21 @@ def label_segments(segments: list[Segment]) -> list[tuple[SectionName, float]]:
         labels[i] = (SectionName.VERSE_2 if seen_verse else SectionName.VERSE, confidence)
         seen_verse = True
     return [label for label in labels if label is not None]
+
+
+def load_vocal_stem(stemset: StemSet, directory: Path) -> np.ndarray:
+    """Read the ``vocals`` stem of a StemSet as float32 (channels, samples) at the internal rate."""
+    stem = next((stem for stem in stemset.stems if stem.name == "vocals"), None)
+    if stem is None:
+        raise SectionsError("the stem set has no 'vocals' stem; omit --stems or separate again")
+    path = Path(directory) / stem.path
+    try:
+        data, rate = sf.read(str(path), dtype="float32", always_2d=True)
+    except (OSError, RuntimeError) as exc:
+        raise SectionsError(f"cannot read vocal stem {path}: {exc}") from exc
+    if rate != SAMPLE_RATE:
+        raise SectionsError(f"vocal stem {path} is {rate} Hz, expected {SAMPLE_RATE}")
+    return np.ascontiguousarray(data.T)
 
 
 def sections_model_version() -> ModelVersion:
