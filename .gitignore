@@ -21,3 +21,6 @@ tests/fixtures/generated/*.wav
 
 # macOS
 .DS_Store
+
+# Tooling caches
+.atl/
