@@ -55,11 +55,11 @@ def c_major_wav(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture
-def click_track_wav(tmp_path: Path) -> ClickTrack:
-    """120 BPM in 4/4, clicks from 0 s to 20 s (inclusive, 41 beats): decaying 1 kHz bursts,
-    louder on downbeats. The file is padded 0.1 s past the last click so the model can see it."""
-    bpm, beats_per_bar, seconds = 120.0, 4, 20
+def _write_click_track(path: Path, bpm: float, beats_per_bar: int, seconds: int) -> ClickTrack:
+    """Decaying 1 kHz bursts from 0 s to ``seconds`` (inclusive), louder on downbeats.
+
+    The file is padded 0.1 s past the last click so the model can see it.
+    """
     interval = 60.0 / bpm
     n = int((seconds + 0.1) * FIXTURE_RATE)
     mono = np.zeros(n)
@@ -72,6 +72,17 @@ def click_track_wav(tmp_path: Path) -> ClickTrack:
         gain = 0.9 if i % beats_per_bar == 0 else 0.5
         end = min(start + click_len, n)
         mono[start:end] += gain * burst[: end - start]
-    path = tmp_path / "click_track.wav"
     _write_stereo(path, mono, FIXTURE_RATE)
     return ClickTrack(path, bpm, beat_times, beat_times[::beats_per_bar])
+
+
+@pytest.fixture
+def click_track_wav(tmp_path: Path) -> ClickTrack:
+    """120 BPM in 4/4, clicks from 0 s to 20 s (inclusive, 41 beats)."""
+    return _write_click_track(tmp_path / "click_track.wav", 120.0, 4, 20)
+
+
+@pytest.fixture
+def click_track_34_wav(tmp_path: Path) -> ClickTrack:
+    """90 BPM in 3/4, clicks from 0 s to 12 s (inclusive, 19 beats)."""
+    return _write_click_track(tmp_path / "click_track_34.wav", 90.0, 3, 12)

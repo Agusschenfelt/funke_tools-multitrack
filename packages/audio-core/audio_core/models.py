@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from audio_core.constants import SAMPLE_RATE
+
 
 class ModelVersion(BaseModel):
     name: str
@@ -22,6 +24,7 @@ class KeyInfo(BaseModel):
     mode: str
     camelot: str
     compatible: list[str]
+    note: str | None = None
 
 
 class Loudness(BaseModel):
@@ -49,6 +52,10 @@ class StemSet(BaseModel):
     source: str
     model: ModelVersion
     device: str
+    shifts: int = 1
     elapsed_seconds: float
+    load_seconds: float
+    audio_seconds: float
     samples: int
+    sample_rate: int = SAMPLE_RATE
     stems: list[Stem]

@@ -9,9 +9,13 @@ from audio_core.analysis import (
     estimate_key_librosa,
     infer_time_signature,
     measure_loudness,
+    resolve_key_backend,
+    true_peak,
 )
 from audio_core.analysis import analyze as run_analyze
+from audio_core.constants import SAMPLE_RATE
 from audio_core.io import decode
+from audio_core.models import Analysis
 from tests.conftest import ClickTrack, requires_ffmpeg
 
 
@@ -72,6 +76,50 @@ def test_loudness_of_minus_20_dbfs_sine(sine_minus20_wav) -> None:
     assert loudness.true_peak_dbtp == pytest.approx(-20.0, abs=0.5)
 
 
+def test_key_of_silence_is_unknown() -> None:
+    info = estimate_key_librosa(np.zeros((2, 4 * SAMPLE_RATE), dtype=np.float32))
+    assert (info.key, info.mode, info.camelot) == ("unknown", "unknown", "")
+    assert info.compatible == []
+    assert info.note
+
+
+def test_unknown_key_round_trips_through_analysis_model() -> None:
+    info = estimate_key_librosa(np.zeros((2, SAMPLE_RATE), dtype=np.float32))
+    result = Analysis(
+        source="x", duration=1.0, sample_rate=SAMPLE_RATE, grid=None, key=info, loudness=None,
+        models={},
+    )  # fmt: skip
+    assert Analysis.model_validate_json(result.model_dump_json()).key == info
+
+
+def test_essentia_backend_unavailable_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("audio_core.analysis._essentia_available", lambda: False)
+    with pytest.raises(AnalysisError, match="essentia"):
+        resolve_key_backend("essentia")
+    assert resolve_key_backend("auto") == "librosa"
+    assert resolve_key_backend("librosa") == "librosa"
+
+
+def test_unknown_key_backend_raises() -> None:
+    with pytest.raises(AnalysisError, match="unknown key backend"):
+        resolve_key_backend("nope")  # type: ignore[arg-type]
+
+
+def test_chunked_true_peak_matches_single_pass() -> None:
+    """A 25 s signal spans three 10 s blocks; the result must match one full-length pass."""
+    from scipy.signal import resample_poly
+
+    rng = np.random.default_rng(0)
+    t = np.arange(25 * SAMPLE_RATE) / SAMPLE_RATE
+    audio = (0.4 * np.sin(2 * np.pi * 997 * t) + 0.1 * rng.standard_normal(t.size)).astype(
+        np.float32
+    )
+    audio = np.stack([audio, audio * 0.8])
+    expected = float(np.max(np.abs(resample_poly(audio, 4, 1, axis=1))))
+    got = true_peak(audio)
+    assert abs(20 * np.log10(got) - 20 * np.log10(expected)) < 0.01
+
+
 def test_loudness_of_silence_is_finite() -> None:
     loudness = measure_loudness(np.zeros((2, 44100), dtype=np.float32))
     assert np.isfinite(loudness.integrated_lufs)
@@ -96,3 +144,33 @@ def test_click_track_grid_and_models(click_track_wav: ClickTrack) -> None:
     assert set(result.models) == {"beats", "key", "loudness"}
     assert result.models["beats"].name == "beat_this"
     assert result.models["beats"].source == "final0 checkpoint"
+
+
+@requires_ffmpeg
+def test_three_four_grid_is_reported_as_three_four(
+    click_track_34_wav: ClickTrack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the true 3/4 grid injected, analyze must report 3/4 (not the 4/4 default)."""
+    monkeypatch.setattr(
+        "audio_core.analysis.detect_beats",
+        lambda audio, **_: (click_track_34_wav.beat_times, click_track_34_wav.downbeat_times),
+    )
+    result = run_analyze(decode(click_track_34_wav.path), "click_34.wav")
+    assert result.grid is not None
+    assert result.grid.bpm == pytest.approx(90.0, abs=0.5)
+    assert result.grid.time_signature == "3/4"
+    assert result.grid.notes == []
+
+
+@pytest.mark.slow
+@pytest.mark.xfail(
+    reason="beat_this (without the DBN) marks nearly every click as a downbeat on synthetic "
+    "3/4 clicks, so the meter falls back to 4/4; real music is expected to work",
+    strict=False,
+)
+@requires_ffmpeg
+def test_three_four_click_track_model_detection(click_track_34_wav: ClickTrack) -> None:
+    """Runs beat_this on a 90 BPM 3/4 click track and expects 3/4 (known model limitation)."""
+    result = run_analyze(decode(click_track_34_wav.path), "click_34.wav")
+    assert result.grid is not None
+    assert result.grid.time_signature == "3/4"

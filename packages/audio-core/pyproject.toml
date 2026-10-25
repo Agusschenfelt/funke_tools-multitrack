@@ -1,22 +1,27 @@
+# Development pins are driven by an Intel macOS machine (no GPU, no wheels past torch 2.2.2).
+# The Linux worker image MUST use torch>=2.6: torch<2.6 is in the CVE-2025-32434 range
+# (remote code execution through torch.load). Keep checkpoint loads on trusted sources.
+
 [project]
 name = "audio-core"
 version = "0.1.0"
 description = "Audio pipelines and CLI for the multitrack and stems tool."
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    "numpy<2",
+    "numpy<2",  # cap: torch 2.2.x is built against the NumPy 1 ABI
     "soundfile",
     "typer",
     "pydantic>=2",
     "rich",
-    "torch>=2,<2.3",
-    "torchaudio<2.3",
+    "torch>=2,<2.3",  # cap: PyTorch publishes no Intel macOS wheels after 2.2.2
+    "torchaudio<2.3",  # cap: must match the torch 2.2.x line (same Intel macOS wheel limit)
     "beat-this>=1.1.0",
     "librosa>=0.11.0",
     "pyloudnorm>=0.2.0",
     "scipy>=1.17.1",
-    "numba<0.62",
-    "llvmlite<0.45",
+    "numba<0.62",  # cap: no wheel for this Intel Mac in newer releases
+    "llvmlite<0.45",  # cap: numba 0.61 requires llvmlite 0.44.x; newer has no wheel here
+    "demucs>=4.1.0",
 ]
 
 [project.scripts]
@@ -49,3 +54,5 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["slow: downloads model weights or runs model inference"]
+# Plain `pytest` skips slow tests; run them with `uv run pytest -m slow`.
+addopts = "-m 'not slow'"

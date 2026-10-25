@@ -12,6 +12,7 @@ Heavy imports (torch, beat_this, librosa) stay inside the functions that need th
 
 from dataclasses import dataclass
 from importlib import metadata
+from typing import Literal
 
 import numpy as np
 
@@ -22,6 +23,14 @@ BEAT_MODEL = "final0"
 TRUE_PEAK_OVERSAMPLING = 4
 SILENCE_LUFS = -70.0
 SILENCE_DBTP = -120.0
+# True peak is computed in blocks so peak memory stays bounded for long inputs.
+TRUE_PEAK_BLOCK_SECONDS = 10
+TRUE_PEAK_OVERLAP_SAMPLES = 512
+# Chroma vectors with a standard deviation below this are treated as constant (silence).
+CHROMA_FLATNESS_EPSILON = 1e-6
+
+KeyBackend = Literal["auto", "essentia", "librosa"]
+KEY_BACKENDS = ("auto", "essentia", "librosa")
 
 PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 _FLAT_TO_SHARP = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
@@ -41,6 +50,7 @@ class AnalysisError(RuntimeError):
 class AnalyzeOptions:
     beat_checkpoint: str = BEAT_MODEL
     device: str = "cpu"
+    key_backend: KeyBackend = "auto"
 
 
 def _package_version(name: str) -> str:
@@ -138,17 +148,26 @@ def key_info(pitch_class: int, mode: str) -> KeyInfo:
     )
 
 
+def unknown_key(note: str) -> KeyInfo:
+    """Result for inputs without a determinable key."""
+    return KeyInfo(key="unknown", mode="unknown", camelot="", compatible=[], note=note)
+
+
 def estimate_key_librosa(audio: np.ndarray) -> KeyInfo:
     """Krumhansl-Schmuckler key estimate from time-averaged CQT chroma."""
     import librosa
 
     chroma = librosa.feature.chroma_cqt(y=to_mono(audio), sr=SAMPLE_RATE).mean(axis=1)
-    best_score, best = -np.inf, (0, "major")
+    if not np.all(np.isfinite(chroma)) or float(np.std(chroma)) < CHROMA_FLATNESS_EPSILON:
+        return unknown_key("chroma vector is constant (silence or no tonal content)")
+    best_score, best = -np.inf, None
     for mode, profile in (("major", _MAJOR_PROFILE), ("minor", _MINOR_PROFILE)):
         for tonic in range(12):
             score = float(np.corrcoef(chroma, np.roll(profile, tonic))[0, 1])
-            if score > best_score:
+            if np.isfinite(score) and score > best_score:
                 best_score, best = score, (tonic, mode)
+    if best is None:
+        return unknown_key("all key-profile correlations were undefined")
     return key_info(*best)
 
 
@@ -171,18 +190,34 @@ def _essentia_available() -> bool:
     return True
 
 
-def key_model_version() -> ModelVersion:
-    """The model record for whichever key backend `estimate_key` will use."""
+def resolve_key_backend(backend: KeyBackend = "auto") -> Literal["essentia", "librosa"]:
+    """Map the requested backend to the one that will run, failing clearly if unavailable."""
+    if backend not in KEY_BACKENDS:
+        raise AnalysisError(f"unknown key backend {backend!r}; choose one of {list(KEY_BACKENDS)}")
+    if backend == "librosa":
+        return "librosa"
     if _essentia_available():
+        return "essentia"
+    if backend == "essentia":
+        raise AnalysisError(
+            "key backend 'essentia' requested but essentia is not importable; "
+            "install the extra (`uv sync --extra essentia`) or use --key-backend librosa"
+        )
+    return "librosa"
+
+
+def key_model_version(backend: KeyBackend = "auto") -> ModelVersion:
+    """The model record for whichever key backend `estimate_key` will use."""
+    if resolve_key_backend(backend) == "essentia":
         return ModelVersion(name="essentia-keyextractor", version=_package_version("essentia"))
     return ModelVersion(
         name="librosa-krumhansl", version=_package_version("librosa"), source="chroma_cqt"
     )
 
 
-def estimate_key(audio: np.ndarray) -> KeyInfo:
-    """Estimate the key, preferring Essentia and falling back to librosa."""
-    if _essentia_available():
+def estimate_key(audio: np.ndarray, backend: KeyBackend = "auto") -> KeyInfo:
+    """Estimate the key. "auto" prefers Essentia when importable and falls back to librosa."""
+    if resolve_key_backend(backend) == "essentia":
         return estimate_key_essentia(audio)
     return estimate_key_librosa(audio)
 
@@ -190,15 +225,36 @@ def estimate_key(audio: np.ndarray) -> KeyInfo:
 # --- Loudness ----------------------------------------------------------------------------
 
 
+def true_peak(audio: np.ndarray) -> float:
+    """Largest absolute sample of the 4x oversampled signal, computed in overlapping blocks.
+
+    Each block is extended by a small overlap on both sides so the polyphase filter has context
+    at block edges; only the interior of each block contributes to the maximum. Memory is bounded
+    by the block size instead of the input length.
+    """
+    from scipy.signal import resample_poly
+
+    block = TRUE_PEAK_BLOCK_SECONDS * SAMPLE_RATE
+    overlap = TRUE_PEAK_OVERLAP_SAMPLES
+    n = audio.shape[-1]
+    peak = 0.0
+    for start in range(0, n, block):
+        lo = max(0, start - overlap)
+        hi = min(n, start + block + overlap)
+        up = resample_poly(audio[:, lo:hi], TRUE_PEAK_OVERSAMPLING, 1, axis=1)
+        first = (start - lo) * TRUE_PEAK_OVERSAMPLING
+        last = first + min(block, n - start) * TRUE_PEAK_OVERSAMPLING
+        peak = max(peak, float(np.max(np.abs(up[:, first:last]))))
+    return peak
+
+
 def measure_loudness(audio: np.ndarray) -> Loudness:
     """Integrated LUFS (BS.1770) and true peak in dBTP from a 4x oversampled signal."""
     import pyloudnorm as pyln
-    from scipy.signal import resample_poly
 
     meter = pyln.Meter(SAMPLE_RATE)
     lufs = float(meter.integrated_loudness(audio.T.astype(np.float64)))
-    oversampled = resample_poly(audio, TRUE_PEAK_OVERSAMPLING, 1, axis=1)
-    peak = float(np.max(np.abs(oversampled)))
+    peak = true_peak(audio)
     dbtp = 20.0 * np.log10(peak) if peak > 0 else SILENCE_DBTP
     if not np.isfinite(lufs):
         lufs = SILENCE_LUFS
@@ -211,11 +267,12 @@ def measure_loudness(audio: np.ndarray) -> Loudness:
 def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = None) -> Analysis:
     """Analyze decoded audio of shape (2, n_samples) at 44.1 kHz."""
     options = options or AnalyzeOptions()
+    resolve_key_backend(options.key_backend)  # fail fast, before the slow beat model runs
     beats, downbeats = detect_beats(
         audio, checkpoint=options.beat_checkpoint, device=options.device
     )
     grid = build_grid(beats, downbeats)
-    key = estimate_key(audio)
+    key = estimate_key(audio, options.key_backend)
     loudness = measure_loudness(audio)
     return Analysis(
         source=source,
@@ -230,7 +287,7 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
                 version=_package_version("beat_this"),
                 source=f"{options.beat_checkpoint} checkpoint",
             ),
-            "key": key_model_version(),
+            "key": key_model_version(options.key_backend),
             "loudness": ModelVersion(name="pyloudnorm", version=_package_version("pyloudnorm")),
         },
     )
