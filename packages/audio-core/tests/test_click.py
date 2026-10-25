@@ -209,3 +209,22 @@ def test_pickup_beats_inside_count_in_do_not_double_click() -> None:
     samples = [e.sample for e in click_events(timeline, total, options())]
     assert len(samples) == len(set(samples))
     assert np.all(np.diff(samples) >= 22050 - 1)
+
+
+def test_accent_survives_beat_and_downbeat_rounding_differences() -> None:
+    # Beats sit 20 microseconds off the downbeats: they round to a different sample (+1), so an
+    # exact-equality match would lose every accent.
+    base = make_grid(120, 4, 1.0, bars=3)
+    grid = Grid(
+        bpm=120,
+        beats=[b + 0.00002 for b in base.beats],
+        downbeats=base.downbeats,
+        time_signature="4/4",
+    )
+    timeline = build_timeline(grid, count_in_bars=1)
+    assert set(timeline.beats).isdisjoint(timeline.downbeats)
+    events = click_events(timeline, total_for(timeline.beats[-1]), options())
+    accented = {e.sample for e in events if e.accent}
+    in_grid = {s for s in timeline.beats if s >= timeline.first_downbeat}
+    assert {s for s in in_grid if s - 1 in set(timeline.downbeats)} <= accented
+    assert len([e for e in events if e.accent and e.sample >= timeline.first_downbeat]) == 3

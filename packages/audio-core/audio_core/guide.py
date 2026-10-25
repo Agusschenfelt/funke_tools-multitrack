@@ -88,24 +88,25 @@ def trim_leading_silence(audio: np.ndarray, threshold: float = ONSET_THRESHOLD) 
     return audio[loud[0] :] if loud.size else audio[:0]
 
 
-def load_cue_audio(path: Path) -> np.ndarray:
-    """Load a WAV as float32 mono at the internal rate with leading silence trimmed."""
+def load_cue_audio(path: Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
+    """Load a WAV as float32 mono at ``sample_rate`` with leading silence trimmed."""
     data, rate = sf.read(str(path), dtype="float32", always_2d=True)
     mono = data.mean(axis=1)
-    if rate != SAMPLE_RATE:
-        mono = soxr.resample(mono, rate, SAMPLE_RATE)
+    if rate != sample_rate:
+        mono = soxr.resample(mono, rate, sample_rate)
     return trim_leading_silence(np.ascontiguousarray(mono, dtype=DTYPE))
 
 
 class CueLibrary:
     """A cue sample directory; samples load lazily and a failure is reported once per cue."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, sample_rate: int = SAMPLE_RATE) -> None:
         self.directory = Path(directory)
+        self.sample_rate = sample_rate
         manifest_path = self.directory / "manifest.json"
         try:
             self.manifest = CueManifest.model_validate_json(manifest_path.read_text("utf-8"))
-        except (OSError, ValidationError) as exc:
+        except (OSError, ValueError, ValidationError) as exc:
             raise CueLibraryError(f"cannot load cue manifest {manifest_path}: {exc}") from exc
         self._cache: dict[str, np.ndarray | str] = {}
 
@@ -122,7 +123,7 @@ class CueLibrary:
             return f"cue {cue_id!r} has no manifest entry"
         path = self.directory / entry.file
         try:
-            audio = load_cue_audio(path)
+            audio = load_cue_audio(path, self.sample_rate)
         except (OSError, RuntimeError) as exc:
             return f"cue {cue_id!r} sample {entry.file!r} cannot be read: {exc}"
         if audio.size == 0:
@@ -158,6 +159,11 @@ def render_guide(
     library: CueLibrary,
 ) -> tuple[np.ndarray, GuideReport]:
     """Render the guide as a mono float32 buffer of exactly ``total_samples`` samples."""
+    if library.sample_rate != timeline.sample_rate:
+        raise CueLibraryError(
+            f"cue library rate {library.sample_rate} Hz does not match "
+            f"timeline rate {timeline.sample_rate} Hz"
+        )
     report = GuideReport()
     # (sample, kind, cue_id); kind 0 = section cue, 1 = count, so the count sorts last on a tie.
     events = _count_events(timeline)
@@ -182,7 +188,7 @@ def render_guide(
             kept.append((sample, cue_id))
 
     guide = np.zeros(total_samples, dtype=DTYPE)
-    fade = int(FADE_SECONDS * SAMPLE_RATE)
+    fade = int(FADE_SECONDS * timeline.sample_rate)
     warned: set[str] = set()
     for i, (sample, cue_id) in enumerate(kept):
         audio, reason = library.get(cue_id)

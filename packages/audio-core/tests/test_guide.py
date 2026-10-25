@@ -258,3 +258,27 @@ def test_guide_is_its_own_buffer(library: CueLibrary) -> None:
     guide, _ = render_guide(timeline, total, None, library)
     assert not np.shares_memory(guide, band)
     np.testing.assert_array_equal(band, before)
+
+
+def test_malformed_manifest_json_raises_cue_library_error(tmp_path: Path) -> None:
+    directory = tmp_path / "bad"
+    directory.mkdir()
+    (directory / "manifest.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(CueLibraryError):
+        CueLibrary(directory)
+    (directory / "manifest.json").write_bytes(b"\xff\xfe\x00")
+    with pytest.raises(CueLibraryError):
+        CueLibrary(directory)
+
+
+def test_guide_uses_the_timeline_rate_and_rejects_a_mismatched_library(tmp_path: Path) -> None:
+    directory = build_library(tmp_path / "es")
+    timeline = build_timeline(make_grid(120, 4, 0.5), sample_rate=48000)
+    total = timeline.total_samples(5 * 48000)
+    with pytest.raises(CueLibraryError, match="rate"):
+        render_guide(timeline, total, None, CueLibrary(directory))
+    library = CueLibrary(directory, sample_rate=48000)
+    guide, report = render_guide(timeline, total, None, library)
+    assert guide.shape == (total,)
+    # A 0.25 s cue at 48 kHz is 12000 samples; at the wrong rate it would be 11025.
+    assert report.placed[0].length == round(TONE_SECONDS * 48000)

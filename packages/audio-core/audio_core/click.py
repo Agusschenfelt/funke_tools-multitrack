@@ -5,6 +5,7 @@ starts at its onset sample with no pre-delay, so the onset equals the beat sampl
 export is not done here.
 """
 
+from bisect import bisect_left
 from dataclasses import dataclass
 from typing import Literal
 
@@ -20,6 +21,10 @@ ClickSound = Literal["classic", "cowbell", "woodblock", "rimshot"]
 ACCENT_PEAK = 0.708
 NORMAL_PEAK = 0.447
 SUBDIVISION_PEAK = 0.25
+
+# A beat within this many seconds of a downbeat is that downbeat: the grid rounds beats and
+# downbeats independently, so the same instant can differ by a sample or two.
+_DOWNBEAT_TOLERANCE_SECONDS = 0.001
 
 # A gap wider than this many beat intervals breaks a subdivision chain (long intro before the
 # count-in): the click before the gap is treated like the last beat.
@@ -77,12 +82,19 @@ def click_sample(
     return (wave / np.max(np.abs(wave)) * peak).astype(DTYPE)
 
 
+def _is_downbeat(sample: int, downbeats: tuple[int, ...], tolerance: int) -> bool:
+    """True when ``sample`` is within ``tolerance`` samples of a (sorted) downbeat."""
+    i = bisect_left(downbeats, sample)
+    near = downbeats[max(i - 1, 0) : i + 1]
+    return any(abs(d - sample) <= tolerance for d in near)
+
+
 def _main_beats(timeline: Timeline, total_samples: int, straight_grid: bool) -> list[ClickEvent]:
     bpb = timeline.beats_per_bar
     events = [
         ClickEvent(sample, accent=k % bpb == 0) for k, sample in enumerate(timeline.count_in_beats)
     ]
-    downbeats = set(timeline.downbeats)
+    tolerance = round(_DOWNBEAT_TOLERANCE_SECONDS * timeline.sample_rate)
     first = timeline.first_downbeat
     start = timeline.count_in_start
     if straight_grid:
@@ -95,7 +107,7 @@ def _main_beats(timeline: Timeline, total_samples: int, straight_grid: bool) -> 
     else:
         # Detected beats inside the count-in window are replaced by the count-in clicks.
         events.extend(
-            ClickEvent(sample, accent=sample in downbeats)
+            ClickEvent(sample, accent=_is_downbeat(sample, timeline.downbeats, tolerance))
             for sample in timeline.beats
             if sample < start or sample >= first
         )
