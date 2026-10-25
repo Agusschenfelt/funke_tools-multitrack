@@ -1,0 +1,91 @@
+{
+  "language": "es",
+  "voice": {
+    "name": "es_MX-ald-medium",
+    "engine": "piper-tts 1.8.0",
+    "model_url": "https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium",
+    "dataset": "https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset",
+    "model_sha256": "019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63",
+    "length_scale": 0.65,
+    "count_length_scale": 0.52,
+    "format": "mono 44100 Hz 24-bit WAV, peak -1.0 dBFS",
+    "note": "Placeholder voice; a recorded Rioplatense voice is planned."
+  },
+  "cues": {
+    "intro": {
+      "file": "intro.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Intro'; generated with piper-tts 1.8.0"
+    },
+    "verse": {
+      "file": "verse.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Verso'; generated with piper-tts 1.8.0"
+    },
+    "verse_2": {
+      "file": "verse_2.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Verso dos'; generated with piper-tts 1.8.0"
+    },
+    "pre_chorus": {
+      "file": "pre_chorus.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Pre coro'; generated with piper-tts 1.8.0"
+    },
+    "chorus": {
+      "file": "chorus.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Coro'; generated with piper-tts 1.8.0"
+    },
+    "bridge": {
+      "file": "bridge.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Puente'; generated with piper-tts 1.8.0"
+    },
+    "solo": {
+      "file": "solo.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Solo'; generated with piper-tts 1.8.0"
+    },
+    "instrumental": {
+      "file": "instrumental.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Instrumental'; generated with piper-tts 1.8.0"
+    },
+    "break": {
+      "file": "break.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Break'; generated with piper-tts 1.8.0"
+    },
+    "outro": {
+      "file": "outro.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Final'; generated with piper-tts 1.8.0"
+    },
+    "tag": {
+      "file": "tag.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Tag'; generated with piper-tts 1.8.0"
+    },
+    "count_1": {
+      "file": "count_1.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Uno'; generated with piper-tts 1.8.0"
+    },
+    "count_2": {
+      "file": "count_2.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Dos'; generated with piper-tts 1.8.0"
+    },
+    "count_3": {
+      "file": "count_3.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Tres'; generated with piper-tts 1.8.0"
+    },
+    "count_4": {
+      "file": "count_4.wav",
+      "license": "Unlicense (http://unlicense.org)",
+      "source": "Piper voice es_MX-ald-medium (https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/ald/medium); dataset https://huggingface.co/datasets/rmcpantoja/Ald_Mexican_Spanish_speech_dataset; text 'Cuatro'; generated with piper-tts 1.8.0"
+    }
+  }
+}
