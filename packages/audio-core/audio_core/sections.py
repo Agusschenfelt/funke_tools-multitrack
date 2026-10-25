@@ -40,6 +40,10 @@ this order, and a segment keeps the first label that matches:
    ``verse_2`` (the vocabulary has no third verse).
 A song with a single segment is one low-confidence verse.
 
+Degenerate audio (digital silence, or a constant tone whose features do not vary from bar to bar)
+has no estimable structure: it is reported as a single segment, hence one low-confidence verse,
+instead of clustering numerical noise. Non-finite features raise ``SectionsError``.
+
 Confidence is ``base + spread * margin`` with the margin clipped to 0..1 (see ``_confidence``).
 The margin is how far the deciding feature is from its threshold (energy for intro and outro, the
 cluster's share of the chorus score, how much energy rises into the chorus, how absent the vocals
@@ -88,6 +92,13 @@ PRE_CHORUS_MAX_BARS = 8
 BREAK_MAX_BARS = 8
 UNKNOWN_VOCALS = 0.85
 FEATURE_EPSILON = 1e-8
+# A vocal stem may differ from the mix by up to this many seconds (decoder padding, separation
+# rounding); it is padded with silence or trimmed to the mix length. More is a real mismatch.
+VOCAL_LENGTH_TOLERANCE = 0.5
+# Silent or constant audio: no bar-to-bar variation in the features (chroma is in 0..1, MFCCs are
+# in dB-like units), so any clustering would only amplify numerical noise.
+FLAT_CHROMA_STD = 1e-3
+FLAT_TIMBRE_STD = 1e-2
 
 
 class SectionsError(ValueError):
@@ -171,6 +182,20 @@ def _per_bar_median(feature: np.ndarray, frame_times: np.ndarray, grid: Grid, ed
     return out
 
 
+def _fit_vocals(vocals: np.ndarray, samples: int) -> np.ndarray:
+    """Pad with silence or trim the vocal stem to ``samples``; a large mismatch is an error."""
+    difference = vocals.shape[-1] - samples
+    if abs(difference) > VOCAL_LENGTH_TOLERANCE * SAMPLE_RATE:
+        raise SectionsError(
+            f"vocal stem is {vocals.shape[-1] / SAMPLE_RATE:.2f} s but the audio is "
+            f"{samples / SAMPLE_RATE:.2f} s; they must match within {VOCAL_LENGTH_TOLERANCE} s"
+        )
+    if difference > 0:
+        return vocals[..., :samples]
+    pad = [(0, 0)] * (vocals.ndim - 1) + [(0, -difference)]
+    return np.pad(vocals, pad)
+
+
 def _vocal_rms(vocals: np.ndarray, edges: np.ndarray) -> np.ndarray:
     mono = to_mono(vocals) if vocals.ndim == 2 else vocals.astype(np.float32, copy=False)
     out = np.zeros(edges.size - 1)
@@ -192,6 +217,8 @@ def extract_bar_features(
     mono = to_mono(audio) if audio.ndim == 2 else audio.astype(np.float32, copy=False)
     duration = mono.size / SAMPLE_RATE
     edges = bar_edges(grid, duration)
+    if vocals is not None:
+        vocals = _fit_vocals(vocals, mono.size)
     y = librosa.resample(mono, orig_sr=SAMPLE_RATE, target_sr=FEATURE_RATE)
     chroma = librosa.feature.chroma_cqt(y=y, sr=FEATURE_RATE, hop_length=FEATURE_HOP)
     mfcc = librosa.feature.mfcc(y=y, sr=FEATURE_RATE, hop_length=FEATURE_HOP, n_mfcc=N_MFCC)
@@ -209,6 +236,14 @@ def extract_bar_features(
         rms=bar_rms,
         vocal_rms=None if vocals is None else _vocal_rms(vocals, edges),
         edges=edges,
+    )
+
+
+def is_flat(features: BarFeatures) -> bool:
+    """True when the features barely vary across bars (silence or a constant tone)."""
+    return (
+        float(features.chroma.std(axis=1).max()) < FLAT_CHROMA_STD
+        and float(features.timbre.std(axis=1).max()) < FLAT_TIMBRE_STD
     )
 
 
@@ -398,7 +433,9 @@ def segment_song(
     features = extract_bar_features(audio, grid, vocals=vocals)
     n_bars = features.rms.size
     x = feature_matrix(features)
-    if n_bars < MIN_BARS_FOR_SEGMENTATION:
+    if not np.isfinite(x).all():
+        raise SectionsError("audio produced non-finite features; cannot detect sections")
+    if n_bars < MIN_BARS_FOR_SEGMENTATION or is_flat(features):
         runs = [[0, n_bars, 0]]
     else:
         runs = merge_short_runs(refine_boundaries(_runs(cluster_bars(x)), x), x)
@@ -544,8 +581,9 @@ def detect_sections(
 ) -> Sections:
     """Detect and label the sections of a song; every start is a downbeat time.
 
-    ``vocals`` is an optional vocal stem (same length and rate as ``audio``) that sharpens the
-    labels. Raises ``SectionsError`` when the grid has no downbeats.
+    ``vocals`` is an optional vocal stem (same rate as ``audio``, length within
+    ``VOCAL_LENGTH_TOLERANCE`` seconds) that sharpens the labels. Raises ``SectionsError`` when the
+    grid has no downbeats or the vocal stem length does not match.
     """
     segments = segment_song(audio, grid, vocals=vocals)
     labels = label_segments(segments)

@@ -8,6 +8,7 @@ from audio_core.models import Grid, SectionName, Sections
 from audio_core.sections import (
     HEURISTICS_VERSION,
     MIN_SEGMENT_BARS,
+    VOCAL_LENGTH_TOLERANCE,
     SectionsError,
     Segment,
     detect_sections,
@@ -198,6 +199,54 @@ def test_grid_without_downbeats_is_an_error(song) -> None:
     audio, _, grid = song
     with pytest.raises(SectionsError, match="no downbeats"):
         segment_song(audio, grid.model_copy(update={"downbeats": []}))
+
+
+def _flat_grid(bars: int = 24) -> Grid:
+    beats = np.arange(bars * BEATS_PER_BAR) * (60.0 / BPM)
+    return Grid(
+        bpm=BPM,
+        beats=beats.tolist(),
+        downbeats=beats[::BEATS_PER_BAR].tolist(),
+        time_signature="4/4",
+    )
+
+
+@pytest.mark.filterwarnings("ignore:Trying to estimate tuning")
+@pytest.mark.parametrize("kind", ["silence", "tone"])
+def test_degenerate_audio_is_one_low_confidence_section(kind: str) -> None:
+    grid = _flat_grid()
+    n = int(24 * BAR_SECONDS * SAMPLE_RATE)
+    if kind == "silence":
+        audio = np.zeros(n, dtype=np.float32)
+    else:
+        audio = (0.3 * np.sin(2 * np.pi * 440 * np.arange(n) / SAMPLE_RATE)).astype(np.float32)
+    detected = detect_sections(audio, grid)
+    assert len(detected.sections) == 1
+    only = detected.sections[0]
+    assert only.start == 0.0
+    assert only.confidence is not None and only.confidence <= 0.2
+    assert Sections.model_validate_json(detected.model_dump_json()) == detected
+
+
+def test_vocal_stem_within_tolerance_is_padded_or_trimmed(song) -> None:
+    audio, vocals, grid = song
+    expected = segment_song(audio, grid, vocals=vocals)
+    slack = int(VOCAL_LENGTH_TOLERANCE * SAMPLE_RATE) - 1
+    assert segment_song(audio, grid, vocals=vocals[:-slack]) == expected
+    padded = np.concatenate([vocals, np.zeros(slack, dtype=np.float32)])
+    assert segment_song(audio, grid, vocals=padded) == expected
+    stereo = np.stack([padded, padded])
+    assert segment_song(audio, grid, vocals=stereo) == expected
+
+
+def test_vocal_stem_with_a_large_length_mismatch_is_an_error(song) -> None:
+    audio, vocals, grid = song
+    too_short = vocals[: -int((VOCAL_LENGTH_TOLERANCE + 0.5) * SAMPLE_RATE)]
+    with pytest.raises(SectionsError, match="vocal stem"):
+        segment_song(audio, grid, vocals=too_short)
+    too_long = np.concatenate([vocals, np.zeros(2 * SAMPLE_RATE, dtype=np.float32)])
+    with pytest.raises(SectionsError, match="vocal stem"):
+        segment_song(audio, grid, vocals=too_long)
 
 
 def test_merge_short_runs_joins_the_more_similar_neighbor() -> None:
