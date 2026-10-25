@@ -261,3 +261,23 @@ def test_detected_sections_feed_the_stage_pack(song: Song, decoded: None, tmp_pa
     assert not [w for w in warnings if "skipped" in w], warnings
     assert len([w for w in warnings if "dropped" in w]) <= 1, warnings
     assert len(listing.strip().splitlines()) == len(detected.sections)
+
+
+def test_analyze_sections_without_a_grid_exits_1(
+    song: Song, decoded: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare = Analysis(
+        source=str(song.wav),
+        duration=1.0,
+        sample_rate=SAMPLE_RATE,
+        grid=None,
+        key=None,
+        loudness=None,
+        models={},
+    )
+    monkeypatch.setattr("audio_core.cli.run_analyze", lambda *args, **kwargs: bare)
+    out = tmp_path / "out"
+    result = runner.invoke(app, ["analyze", str(song.wav), "--out", str(out), "--sections"])
+    assert result.exit_code == 1
+    assert "no beat grid" in result.output
+    assert not out.exists()

@@ -1,10 +1,12 @@
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from audio_core.constants import SAMPLE_RATE
-from audio_core.models import Grid, SectionName, Sections
+from audio_core.models import Grid, ModelVersion, SectionName, Sections, Stem, StemSet
 from audio_core.sections import (
     HEURISTICS_VERSION,
     MIN_SEGMENT_BARS,
@@ -14,6 +16,7 @@ from audio_core.sections import (
     detect_sections,
     kmeans,
     label_segments,
+    load_vocal_stem,
     merge_short_runs,
     sections_model_version,
     segment_song,
@@ -386,3 +389,52 @@ def test_model_version_records_method_and_heuristics() -> None:
     assert version.name == "librosa-laplacian+heuristics"
     assert version.version.endswith(f"heuristics-{HEURISTICS_VERSION}")
     assert "librosa-" in version.version
+
+
+def test_non_finite_features_are_an_error(song, monkeypatch: pytest.MonkeyPatch) -> None:
+    audio, _, grid = song
+    monkeypatch.setattr(
+        "audio_core.sections.feature_matrix",
+        lambda features: np.full((features.rms.size, 3), np.nan),
+    )
+    with pytest.raises(SectionsError, match="non-finite"):
+        segment_song(audio, grid)
+
+
+def _stemset(*names: str) -> StemSet:
+    return StemSet(
+        source="song.wav",
+        model=ModelVersion(name="htdemucs_6s", version="4.0"),
+        device="cpu",
+        elapsed_seconds=1,
+        load_seconds=1,
+        audio_seconds=1,
+        samples=SAMPLE_RATE,
+        stems=[Stem(name=n, path=f"{n}.wav", samples=SAMPLE_RATE) for n in names],
+    )
+
+
+def test_load_vocal_stem_reads_a_valid_stem(tmp_path: Path) -> None:
+    sf.write(str(tmp_path / "vocals.wav"), np.zeros(SAMPLE_RATE, dtype=np.float32), SAMPLE_RATE)
+    data = load_vocal_stem(_stemset("vocals"), tmp_path)
+    assert data.shape == (1, SAMPLE_RATE)
+    assert data.dtype == np.float32
+
+
+def test_load_vocal_stem_without_a_vocals_entry_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(SectionsError, match="no 'vocals' stem"):
+        load_vocal_stem(_stemset("drums"), tmp_path)
+
+
+def test_load_vocal_stem_with_a_missing_or_unreadable_file_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(SectionsError, match="cannot read vocal stem"):
+        load_vocal_stem(_stemset("vocals"), tmp_path)
+    (tmp_path / "vocals.wav").write_bytes(b"not audio")
+    with pytest.raises(SectionsError, match="cannot read vocal stem"):
+        load_vocal_stem(_stemset("vocals"), tmp_path)
+
+
+def test_load_vocal_stem_with_the_wrong_sample_rate_is_an_error(tmp_path: Path) -> None:
+    sf.write(str(tmp_path / "vocals.wav"), np.zeros(8000, dtype=np.float32), 8000)
+    with pytest.raises(SectionsError, match="8000 Hz"):
+        load_vocal_stem(_stemset("vocals"), tmp_path)
