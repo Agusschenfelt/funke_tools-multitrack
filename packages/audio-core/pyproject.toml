@@ -23,6 +23,7 @@ dependencies = [
     "llvmlite<0.45",  # cap: numba 0.61 requires llvmlite 0.44.x; newer has no wheel here
     "demucs>=4.1.0",
     "soxr>=1.1.0",
+    "mido>=1.3.3",
 ]
 
 [project.scripts]
