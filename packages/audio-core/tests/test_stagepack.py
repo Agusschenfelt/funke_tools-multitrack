@@ -1,5 +1,6 @@
 import io
 import json
+import sys
 import zipfile
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 import soundfile as sf
 from typer.testing import CliRunner
 
+from audio_core import stagepack
 from audio_core.cli import app
 from audio_core.constants import SAMPLE_RATE
 from audio_core.models import (
@@ -25,12 +27,14 @@ from audio_core.models import (
 )
 from audio_core.stagepack import (
     StagePackError,
+    bar_starts,
     build_stagepack,
     destination_names,
     sanitize_filename,
     split_track,
     zip_name,
 )
+from audio_core.timeline import SectionCue, build_timeline
 from tests.test_guide import build_library
 
 runner = CliRunner()
@@ -370,3 +374,97 @@ def test_cli_missing_and_invalid_inputs_exit_1(inputs: Inputs) -> None:
         app, ["stagepack", str(inputs.root / "missing"), "--analysis", "x", "--out", "o"]
     )
     assert result.exit_code == 1 and "stemset.json" in result.output
+
+
+def long_intro_pack(root: Path, t0: int, monkeypatch: pytest.MonkeyPatch) -> Inputs:
+    """Pack whose first downbeat is ``t0`` seconds in, so the count-in starts after sample 0."""
+    monkeypatch.setattr(sys.modules[__name__], "SECONDS", t0 + 10)
+    pack = Inputs(root, ("drums", "bass"), 0.1)
+    beats = [t0 + i * 0.5 for i in range(16)]
+    grid = Grid(bpm=120, beats=beats, downbeats=beats[::4], time_signature="4/4")
+    pack.analysis = pack.analysis.model_copy(update={"grid": grid})
+    pack.sections = Sections(
+        sections=[
+            Section(name=SectionName.VERSE, start=t0 + 2.0),
+            Section(name=SectionName.CHORUS, start=t0 + 6.0),
+        ]
+    )
+    return pack
+
+
+def marker_seconds(midi: mido.MidiFile) -> list[tuple[str, float]]:
+    tempo, seconds, markers = 500000, 0.0, []
+    for message in midi.tracks[0]:
+        seconds += mido.tick2second(message.time, TICKS, tempo)
+        if message.type == "set_tempo":
+            tempo = message.tempo
+        elif message.type == "marker":
+            markers.append((message.text, seconds))
+    return markers
+
+
+TICKS = 480
+
+
+@pytest.mark.parametrize("t0", [5, 20, 90])
+def test_long_intro_pack_end_to_end(tmp_path: Path, monkeypatch, t0: int) -> None:
+    pack = long_intro_pack(tmp_path, t0, monkeypatch)
+    result = pack.build()
+    assert result.report["pad_samples"] == 0
+    with zipfile.ZipFile(result.zip_path) as archive:
+        frames = {read_wav(archive, n)[0].shape[1] for n in wav_names(archive)}
+        text = archive.read("Secciones.txt").decode("utf-8")
+        midi = mido.MidiFile(file=io.BytesIO(archive.read("Tempo.mid")))
+    assert frames == {(t0 + 10) * SAMPLE_RATE}
+    (verse, verse_bar, _), (chorus, chorus_bar, _) = (
+        (line.split("\t")[0], int(line.split("\t")[1].removeprefix("bar ")), line)
+        for line in text.splitlines()
+    )
+    assert (verse, chorus) == ("Verso", "Coro") and chorus_bar - verse_bar == 2
+    markers = marker_seconds(midi)
+    assert [m[0] for m in markers] == ["Verse", "Chorus"]
+    assert markers[0][1] == pytest.approx(t0 + 2.0, abs=0.001)
+    assert markers[1][1] == pytest.approx(t0 + 6.0, abs=0.001)
+    ticks = 0
+    for message in midi.tracks[0]:
+        ticks += message.time
+        if message.type == "marker" and message.text == "Verse":
+            assert ticks // 1920 + 1 == verse_bar  # Secciones.txt and Tempo.mid agree
+    assert all(m.tempo <= 0xFFFFFF for m in midi.tracks[0] if m.type == "set_tempo")
+
+
+def test_bar_starts_split_an_over_long_lead(inputs: Inputs) -> None:
+    beats = [200.0 + i * 0.5 for i in range(8)]
+    grid = Grid(bpm=120, beats=beats, downbeats=beats[::4], time_signature="4/4")
+    timeline = build_timeline(grid, 1)
+    starts = bar_starts(timeline)
+    assert starts[0] == 0 and starts == sorted(set(starts))
+    assert starts[-3:] == [timeline.count_in_start, *timeline.downbeats]
+    assert max(b - a for a, b in zip(starts[:-1], starts[1:], strict=True)) < 17 * SAMPLE_RATE
+
+
+def test_off_grid_section_downbeat_does_not_crash(
+    inputs: Inputs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    timeline = build_timeline(inputs.analysis.grid, 1)
+    off_grid = timeline.downbeats[1] + 123
+    cue = SectionCue(inputs.sections.sections[0], off_grid, None)
+    monkeypatch.setattr(stagepack, "section_cues", lambda *_: [cue])
+    text = stagepack.secciones_text(timeline, inputs.sections, "es")
+    assert text.startswith("Verso\tbar 3\t")
+    stagepack.tempo_map(timeline, inputs.analysis.grid, inputs.sections)
+
+
+def test_failed_build_leaves_no_partial_zip(
+    inputs: Inputs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = inputs.build().zip_path.read_bytes()
+
+    def boom(*_args: object) -> None:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(stagepack, "tempo_map", boom)
+    with pytest.raises(RuntimeError, match="disk full"):
+        inputs.build()
+    assert [p.name for p in inputs.out.iterdir()] == ["Mi Canción - G - 120 BPM.zip"]
+    assert (inputs.out / "Mi Canción - G - 120 BPM.zip").read_bytes() == original

@@ -9,9 +9,12 @@ where the song ends and a click or cue that would fall past the end is cut (neve
 """
 
 import json
+import math
+import os
 import re
 import tempfile
 import zipfile
+from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +44,8 @@ from audio_core.models import (
 from audio_core.timeline import Timeline, TimelineError, build_timeline, section_cues
 
 TICKS_PER_BEAT = 480
+# MIDI set_tempo holds microseconds per quarter note in 3 bytes.
+MAX_TEMPO_MICROS = 0xFFFFFF
 FALLBACK_TITLE = "Stage Pack"
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -265,15 +270,25 @@ def bar_starts(timeline: Timeline) -> list[int]:
     """Pack-time bar boundaries: count-in bars, then every detected downbeat.
 
     With a long intro the count-in starts after sample 0; a leading virtual bar from sample 0 keeps
-    bar 1 at time zero so the later bars stay aligned (the tempo map stretches that bar).
+    bar 1 at time zero so the later bars stay aligned (the tempo map stretches that bar). A lead
+    too long for one MIDI tempo event is split into equal virtual bars, so no bar overflows it.
     """
     starts = [
         timeline.count_in_start + i * timeline.bar_samples for i in range(timeline.count_in_bars)
     ]
     starts += list(timeline.downbeats)
-    if starts[0] > 0:
-        starts.insert(0, 0)
+    lead = starts[0]
+    if lead > 0:
+        # Bound by the shortest bar in quarter notes (x/16), so any time signature stays in range.
+        max_bar = int(0.99 * MAX_TEMPO_MICROS * (timeline.beats_per_bar / 4) / 1e6 * SAMPLE_RATE)
+        parts = max(1, math.ceil(lead / max(1, max_bar)))
+        starts = [round(k * lead / parts) for k in range(parts)] + starts
     return starts
+
+
+def _bar_number(starts: list[int], sample: int) -> int:
+    """1-based number of the bar containing ``sample`` (never raises, even off the bar grid)."""
+    return max(1, bisect_right(starts, sample))
 
 
 def secciones_text(timeline: Timeline, sections: Sections | None, language: str) -> str:
@@ -284,7 +299,7 @@ def secciones_text(timeline: Timeline, sections: Sections | None, language: str)
     lines = []
     for placed in section_cues(timeline, sections.sections):
         label = placed.section.label or labels[placed.section.name]
-        bar = starts.index(placed.downbeat) + 1
+        bar = _bar_number(starts, placed.downbeat)
         lines.append(f"{label}\tbar {bar}\t{_clock(placed.downbeat)}")
     return "\n".join(lines) + "\n"
 
@@ -310,7 +325,7 @@ def tempo_map(timeline: Timeline, grid: Grid, sections: Sections | None) -> mido
     if sections is not None:
         labels = SECTION_LABELS["en"]
         for placed in section_cues(timeline, sections.sections):
-            bar = starts.index(placed.downbeat)
+            bar = _bar_number(starts, placed.downbeat) - 1
             text = placed.section.label or labels[placed.section.name]
             events.append((bar * bar_ticks, 2, mido.MetaMessage("marker", text=text)))
 
@@ -412,18 +427,26 @@ def build_stagepack(
     notes = IMPORT_NOTES[(options.destination, options.language)].format(
         rate=f"{rate / 1000:g}", bars=options.count_in_bars
     )
-    with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(zip_path, "w") as archive:
-        for name, audio in tracks:
-            wav = Path(tmp) / f"{name}.wav"
-            _write_wav(wav, audio, rate)
-            archive.write(wav, f"{name}.wav", compress_type=zipfile.ZIP_DEFLATED)
-            wav.unlink()
-        archive.writestr(
-            "Secciones.txt", secciones_text(timeline, sections, options.language).encode("utf-8")
-        )
-        midi_path = Path(tmp) / "Tempo.mid"
-        tempo_map(timeline, analysis.grid, sections).save(str(midi_path))
-        archive.write(midi_path, "Tempo.mid")
-        archive.writestr("Cómo importar.txt", notes.encode("utf-8"))
-        archive.writestr("stagepack.json", json.dumps(report, indent=2, ensure_ascii=False))
+    # Build in a temp file beside the target and move it into place only once complete.
+    partial = zip_path.with_name(f".{zip_path.name}.{os.getpid()}.tmp")
+    try:
+        with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(partial, "w") as archive:
+            for name, audio in tracks:
+                wav = Path(tmp) / f"{name}.wav"
+                _write_wav(wav, audio, rate)
+                archive.write(wav, f"{name}.wav", compress_type=zipfile.ZIP_DEFLATED)
+                wav.unlink()
+            archive.writestr(
+                "Secciones.txt",
+                secciones_text(timeline, sections, options.language).encode("utf-8"),
+            )
+            midi_path = Path(tmp) / "Tempo.mid"
+            tempo_map(timeline, analysis.grid, sections).save(str(midi_path))
+            archive.write(midi_path, "Tempo.mid")
+            archive.writestr("Cómo importar.txt", notes.encode("utf-8"))
+            archive.writestr("stagepack.json", json.dumps(report, indent=2, ensure_ascii=False))
+        os.replace(partial, zip_path)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     return PackResult(zip_path=zip_path, report=report)
