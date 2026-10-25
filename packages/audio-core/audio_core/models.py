@@ -85,6 +85,9 @@ class Section(BaseModel):
     # Seconds in the original song, before the count-in pad is applied.
     start: float = Field(ge=0, allow_inf_nan=False)
     label: str | None = None
+    # Set by automatic detection; hand-written files omit both.
+    confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    cluster: int | None = Field(default=None, ge=0)
 
 
 class Sections(BaseModel):

@@ -1,13 +1,20 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from audio_core.constants import SAMPLE_RATE
-from audio_core.models import Grid
+from audio_core.models import Grid, SectionName, Sections
 from audio_core.sections import (
+    HEURISTICS_VERSION,
     MIN_SEGMENT_BARS,
     SectionsError,
+    Segment,
+    detect_sections,
     kmeans,
+    label_segments,
     merge_short_runs,
+    sections_model_version,
     segment_song,
 )
 
@@ -139,9 +146,14 @@ def test_repeated_parts_share_a_cluster(segments) -> None:
     assert cluster_at(38) not in {cluster_at(14), cluster_at(6)}
 
 
-def test_segmentation_is_deterministic(song, segments) -> None:
+def test_detection_is_deterministic_and_matches_segmentation(song, segments) -> None:
     audio, _, grid = song
-    assert segment_song(audio, grid) == segments
+    # A second, independent run through the public entry point.
+    detected = detect_sections(audio, grid, source="song.wav")
+    assert detected.source == "song.wav"
+    assert [s.start for s in detected.sections] == [seg.start for seg in segments]
+    assert [s.cluster for s in detected.sections] == [seg.cluster for seg in segments]
+    assert [(s.name, s.confidence) for s in detected.sections] == label_segments(segments)
 
 
 @pytest.fixture(scope="module")
@@ -203,3 +215,125 @@ def test_kmeans_separates_distinct_points_deterministically() -> None:
     assert labels[0] == labels[1] and labels[2] == labels[3]
     assert len(set(labels.tolist())) == 3
     assert np.array_equal(labels, kmeans(points, 3))
+
+
+# --- Labels -------------------------------------------------------------------------------
+
+EXPECTED_NAMES = [
+    SectionName.INTRO,
+    SectionName.VERSE,
+    SectionName.CHORUS,
+    SectionName.VERSE_2,
+    SectionName.CHORUS,
+    SectionName.BRIDGE,
+    SectionName.CHORUS,
+    SectionName.OUTRO,
+]
+
+
+def test_synthetic_song_labels_without_vocals(segments) -> None:
+    labels = label_segments(segments)
+    assert [name for name, _ in labels] == EXPECTED_NAMES
+
+
+def test_synthetic_song_labels_with_vocals(segments_with_vocals) -> None:
+    labels = label_segments(segments_with_vocals)
+    assert [name for name, _ in labels] == EXPECTED_NAMES
+
+
+def test_vocals_raise_confidence_of_vocal_dependent_labels(segments, segments_with_vocals) -> None:
+    blind = label_segments(segments)
+    informed = label_segments(segments_with_vocals)
+    for index in (0, 1, 2):  # intro, verse, chorus use vocals when known
+        assert informed[index][1] > blind[index][1]
+    assert blind[5][1] == informed[5][1]  # the bridge rule is structural
+    assert all(0.0 <= confidence <= 1.0 for _, confidence in blind + informed)
+    assert all(name in set(SectionName) for name, _ in blind)
+
+
+def test_detected_sections_form_a_valid_sections_file(song) -> None:
+    audio, _, grid = song
+    n = int(14 * BAR_SECONDS * SAMPLE_RATE)
+    grid14 = Grid(
+        bpm=BPM,
+        beats=[b for b in grid.beats if b < 14 * BAR_SECONDS],
+        downbeats=[d for d in grid.downbeats if d < 14 * BAR_SECONDS],
+        time_signature="4/4",
+    )
+    detected = detect_sections(audio[:n], grid14)
+    assert Sections.model_validate_json(detected.model_dump_json()) == detected
+    assert detected.sections[0].name is SectionName.INTRO
+
+
+def _segment(start_bar, end_bar, cluster, energy, vocal=None) -> Segment:
+    return Segment(start_bar, end_bar, start_bar * 2.0, end_bar * 2.0, cluster, energy, vocal)
+
+
+def test_instrumental_and_solo_need_known_absent_vocals() -> None:
+    segs = [
+        _segment(0, 4, 0, 0.3, 0.0),
+        _segment(4, 12, 1, 1.4, 1.0),
+        _segment(12, 20, 4, 0.9, 1.0),
+        _segment(20, 28, 1, 1.4, 1.0),
+        _segment(28, 36, 2, 1.1, 0.0),
+        _segment(36, 44, 3, 1.5, 0.0),
+        _segment(44, 48, 0, 0.3, 0.0),
+    ]
+    names = [name for name, _ in label_segments(segs)]
+    assert names == [
+        SectionName.INTRO,
+        SectionName.CHORUS,
+        SectionName.BRIDGE,
+        SectionName.CHORUS,
+        SectionName.INSTRUMENTAL,
+        SectionName.SOLO,
+        SectionName.OUTRO,
+    ]
+    # Without vocal information the same two segments can only be verses.
+    blind = [replace(s, vocal=None) for s in segs]
+    assert [name for name, _ in label_segments(blind)][4:6] == [
+        SectionName.VERSE,
+        SectionName.VERSE_2,
+    ]
+
+
+def test_short_rising_segment_before_a_chorus_is_a_pre_chorus() -> None:
+    segs = [
+        _segment(0, 8, 0, 0.85),
+        _segment(8, 12, 1, 0.9),
+        _segment(12, 28, 2, 1.5),
+        _segment(28, 36, 0, 0.85),
+        _segment(36, 40, 1, 0.9),
+        _segment(40, 56, 2, 1.5),
+    ]
+    names = [name for name, _ in label_segments(segs)]
+    assert names == [
+        SectionName.VERSE,
+        SectionName.PRE_CHORUS,
+        SectionName.CHORUS,
+        SectionName.VERSE_2,
+        SectionName.PRE_CHORUS,
+        SectionName.CHORUS,
+    ]
+
+
+def test_quiet_unique_short_segment_is_a_break() -> None:
+    segs = [
+        _segment(0, 8, 0, 1.0),
+        _segment(8, 12, 2, 0.3),
+        _segment(12, 20, 1, 1.5),
+        _segment(20, 28, 0, 1.0),
+        _segment(28, 36, 1, 1.5),
+    ]
+    assert label_segments(segs)[1][0] is SectionName.BREAK
+
+
+def test_single_segment_is_a_low_confidence_verse() -> None:
+    assert label_segments([_segment(0, 6, 0, 1.0)]) == [(SectionName.VERSE, 0.2)]
+
+
+def test_model_version_records_method_and_heuristics() -> None:
+    version = sections_model_version()
+    assert version.name == "librosa-laplacian+heuristics"
+    assert version.version.endswith(f"heuristics-{HEURISTICS_VERSION}")
+    assert "librosa-" in version.version

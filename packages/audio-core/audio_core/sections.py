@@ -21,6 +21,31 @@ boundary is a bar start by construction.
    Segments are runs of one cluster. Segments shorter than ``MIN_SEGMENT_BARS`` are merged into
    the more similar neighbor (cosine similarity of mean bar features) until none remain.
 
+Functional labels (``label_segments``) are heuristic, versioned by ``HEURISTICS_VERSION`` and only
+suggestions; each carries a confidence in 0..1. ``e`` below is ``Segment.energy`` (1.0 = song
+mean), ``vocal`` the fraction of vocal bars (None when no vocal stem was given). Rules apply in
+this order, and a segment keeps the first label that matches:
+
+1. intro: first segment, ``e < LOW_ENERGY`` and (vocals unknown or ``vocal < NO_VOCALS``).
+2. outro: last segment, ``e < LOW_ENERGY``.
+3. chorus: among the remaining clusters that occur at least twice, the one with the highest
+   ``occurrences * mean energy * (1 + mean vocal)`` (the vocal factor is 1 when unknown).
+4. pre_chorus: at most ``PRE_CHORUS_MAX_BARS`` bars, shorter than the chorus right after it, and
+   energy between the previous segment's and that chorus's (rising into the chorus).
+5. bridge: a cluster that occurs once with a chorus somewhere before and after it.
+6. break: a cluster that occurs once, at most ``BREAK_MAX_BARS`` bars and ``e < BREAK_ENERGY``.
+7. Vocals known and absent (``vocal < NO_VOCALS``): solo when ``e >= SOLO_ENERGY``, else
+   instrumental.
+8. Everything else is verse: the first one in the song is ``verse``, every later one
+   ``verse_2`` (the vocabulary has no third verse).
+A song with a single segment is one low-confidence verse.
+
+Confidence is ``base + spread * margin`` with the margin clipped to 0..1 (see ``_confidence``).
+The margin is how far the deciding feature is from its threshold (energy for intro and outro, the
+cluster's share of the chorus score, how much energy rises into the chorus, how absent the vocals
+are). Labels whose rule used vocals, or that assume them, are multiplied by ``UNKNOWN_VOCALS``
+when no vocal stem was given.
+
 Heavy imports (librosa) stay inside the functions that need them, as in ``analysis``.
 """
 
@@ -28,9 +53,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from audio_core.analysis import to_mono
+from audio_core.analysis import _package_version, to_mono
 from audio_core.constants import SAMPLE_RATE
-from audio_core.models import Grid
+from audio_core.models import Grid, ModelVersion, Section, SectionName, Sections
+
+HEURISTICS_VERSION = "1"
 
 FEATURE_RATE = 11025
 FEATURE_HOP = 512
@@ -52,6 +79,14 @@ CONTEXT_BEFORE = 1
 # Boundaries are moved up to this many bars to the strongest change in the unsmoothed features.
 REFINE_BARS = 2
 KMEANS_ITERATIONS = 100
+# Label thresholds (see the module docstring).
+LOW_ENERGY = 0.8
+SOLO_ENERGY = 1.3
+BREAK_ENERGY = 0.5
+NO_VOCALS = 0.25
+PRE_CHORUS_MAX_BARS = 8
+BREAK_MAX_BARS = 8
+UNKNOWN_VOCALS = 0.85
 FEATURE_EPSILON = 1e-8
 
 
@@ -390,3 +425,136 @@ def segment_song(
         )
         for a, b, cluster in runs
     ]
+
+
+# --- Labels ---------------------------------------------------------------------------------
+
+
+def _confidence(base: float, spread: float, margin: float, *, vocals_known: bool, uses_vocals=True):
+    """``base + spread * clip(margin, 0, 1)``, discounted when the rule relied on missing vocals."""
+    value = base + spread * min(max(margin, 0.0), 1.0)
+    return round(value if vocals_known or not uses_vocals else value * UNKNOWN_VOCALS, 2)
+
+
+def _is_silent(segment: Segment) -> bool:
+    return segment.vocal is not None and segment.vocal < NO_VOCALS
+
+
+def label_segments(segments: list[Segment]) -> list[tuple[SectionName, float]]:
+    """Heuristic (name, confidence) per segment; see the module docstring for the rules."""
+    n = len(segments)
+    known = segments[0].vocal is not None if segments else False
+    labels: list[tuple[SectionName, float] | None] = [None] * n
+    if n == 1:
+        return [(SectionName.VERSE, 0.2)]
+
+    first, last = segments[0], segments[-1]
+    if first.energy < LOW_ENERGY and (first.vocal is None or first.vocal < NO_VOCALS):
+        margin = (LOW_ENERGY - first.energy) / LOW_ENERGY
+        labels[0] = (SectionName.INTRO, _confidence(0.5, 0.5, margin, vocals_known=known))
+    if last.energy < LOW_ENERGY:
+        margin = (LOW_ENERGY - last.energy) / LOW_ENERGY
+        labels[-1] = (
+            SectionName.OUTRO,
+            _confidence(0.5, 0.5, margin, vocals_known=known, uses_vocals=False),
+        )
+
+    free = [i for i in range(n) if labels[i] is None]
+    members: dict[int, list[int]] = {}
+    for i in free:
+        members.setdefault(segments[i].cluster, []).append(i)
+    occurrences = {c: [segments[i] for i in idx] for c, idx in members.items()}
+
+    scores: dict[int, float] = {}
+    for cluster, segs in occurrences.items():
+        if len(segs) < 2:
+            continue
+        bars = sum(s.n_bars for s in segs)
+        energy = sum(s.energy * s.n_bars for s in segs) / bars
+        vocal = sum((s.vocal or 0.0) * s.n_bars for s in segs) / bars
+        scores[cluster] = len(segs) * energy * (1.0 + vocal)
+    chorus_cluster = max(scores, key=lambda c: (scores[c], -c)) if scores else None
+    if chorus_cluster is not None:
+        share = scores[chorus_cluster] / sum(scores.values())
+        confidence = _confidence(0.4, 0.5, share, vocals_known=known)
+        for i in members[chorus_cluster]:
+            labels[i] = (SectionName.CHORUS, confidence)
+
+    is_chorus = [label is not None and label[0] is SectionName.CHORUS for label in labels]
+    for i in range(1, n - 1):
+        seg, following = segments[i], segments[i + 1]
+        if labels[i] is not None or not is_chorus[i + 1]:
+            continue
+        rising = segments[i - 1].energy <= seg.energy < following.energy
+        if seg.n_bars <= PRE_CHORUS_MAX_BARS and seg.n_bars < following.n_bars and rising:
+            margin = 2.0 * (following.energy - seg.energy) / following.energy
+            labels[i] = (
+                SectionName.PRE_CHORUS,
+                _confidence(0.45, 0.4, margin, vocals_known=known, uses_vocals=False),
+            )
+
+    for i in range(n):
+        seg = segments[i]
+        if labels[i] is not None or len(members.get(seg.cluster, [])) != 1:
+            continue
+        if any(is_chorus[:i]) and any(is_chorus[i + 1 :]):
+            labels[i] = (SectionName.BRIDGE, 0.6)
+        elif seg.n_bars <= BREAK_MAX_BARS and seg.energy < BREAK_ENERGY:
+            labels[i] = (SectionName.BREAK, 0.4)
+
+    for i in range(n):
+        seg = segments[i]
+        if labels[i] is None and _is_silent(seg):
+            name = SectionName.SOLO if seg.energy >= SOLO_ENERGY else SectionName.INSTRUMENTAL
+            labels[i] = (
+                name,
+                _confidence(0.5, 0.4, 1.0 - (seg.vocal or 0.0) / NO_VOCALS, vocals_known=known),
+            )
+
+    seen_verse = False
+    for i in range(n):
+        if labels[i] is not None:
+            continue
+        seg = segments[i]
+        repeated = len(members.get(seg.cluster, [])) > 1
+        if repeated:
+            confidence = _confidence(0.45, 0.35, seg.vocal or 0.0, vocals_known=known)
+        else:
+            confidence = 0.3
+        labels[i] = (SectionName.VERSE_2 if seen_verse else SectionName.VERSE, confidence)
+        seen_verse = True
+    return [label for label in labels if label is not None]
+
+
+def sections_model_version() -> ModelVersion:
+    """The ``models`` record for this method: librosa version plus the heuristics version."""
+    return ModelVersion(
+        name="librosa-laplacian+heuristics",
+        version=f"librosa-{_package_version('librosa')}+heuristics-{HEURISTICS_VERSION}",
+        source="bar-level chroma/MFCC recurrence, McFee-Ellis Laplacian segmentation",
+    )
+
+
+def detect_sections(
+    audio: np.ndarray,
+    grid: Grid,
+    *,
+    vocals: np.ndarray | None = None,
+    source: str | None = None,
+) -> Sections:
+    """Detect and label the sections of a song; every start is a downbeat time.
+
+    ``vocals`` is an optional vocal stem (same length and rate as ``audio``) that sharpens the
+    labels. Raises ``SectionsError`` when the grid has no downbeats.
+    """
+    segments = segment_song(audio, grid, vocals=vocals)
+    labels = label_segments(segments)
+    return Sections(
+        source=source,
+        sections=[
+            Section(
+                name=name, start=round(seg.start, 4), confidence=confidence, cluster=seg.cluster
+            )
+            for seg, (name, confidence) in zip(segments, labels, strict=True)
+        ],
+    )
