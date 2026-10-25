@@ -14,6 +14,7 @@ class Grid(BaseModel):
     beats: list[float]
     downbeats: list[float]
     time_signature: str
+    notes: list[str] = []
 
 
 class KeyInfo(BaseModel):

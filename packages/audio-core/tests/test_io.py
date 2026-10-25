@@ -6,9 +6,10 @@ import soundfile as sf
 
 from audio_core.constants import SAMPLE_RATE
 from audio_core.io import DecodeError, decode, duration_seconds, write_wav
-from tests.conftest import SINE_AMPLITUDE
+from tests.conftest import SINE_AMPLITUDE, requires_ffmpeg
 
 
+@requires_ffmpeg
 def test_decode_shape_dtype_and_peak(sine_wav: Path) -> None:
     audio = decode(sine_wav)
     assert audio.dtype == np.float32
@@ -18,9 +19,19 @@ def test_decode_shape_dtype_and_peak(sine_wav: Path) -> None:
     assert duration_seconds(audio) == pytest.approx(3.0, abs=0.001)
 
 
-def test_decode_missing_file_raises(tmp_path: Path) -> None:
-    with pytest.raises(DecodeError):
-        decode(tmp_path / "missing.wav")
+def test_decode_missing_file_names_the_path(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.wav"
+    with pytest.raises(DecodeError, match="not found") as info:
+        decode(missing)
+    assert str(missing) in str(info.value)
+
+
+@requires_ffmpeg
+def test_decode_undecodable_file_reports_ffmpeg_failure(tmp_path: Path) -> None:
+    bad = tmp_path / "notes.txt"
+    bad.write_text("not audio", encoding="utf-8")
+    with pytest.raises(DecodeError, match="ffmpeg failed"):
+        decode(bad)
 
 
 def test_write_wav_round_trip(tmp_path: Path) -> None:
