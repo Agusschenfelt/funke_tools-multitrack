@@ -138,6 +138,64 @@ def test_cue_uses_actual_previous_downbeat_when_bars_are_uneven() -> None:
     assert cue.downbeat - cue.cue != timeline.bar_samples
 
 
+def test_uneven_bars_cue_equals_previous_downbeat_not_bar_samples() -> None:
+    # Acceptance criterion 3, stated precisely: the cue is the previous detected downbeat.
+    grid = make_grid(120, 4, 0.5)
+    downbeats = list(grid.downbeats)
+    downbeats[3] += 0.03
+    timeline = build_timeline(grid.model_copy(update={"downbeats": downbeats}))
+    cues = section_cues(
+        timeline,
+        [
+            Section(name=SectionName.VERSE, start=downbeats[3]),
+            Section(name=SectionName.CHORUS, start=downbeats[4]),
+        ],
+    )
+    for cue, index in zip(cues, (3, 4), strict=True):
+        assert cue.downbeat == timeline.downbeats[index]
+        assert cue.cue == timeline.downbeats[index - 1]
+    assert cues[0].downbeat - cues[0].cue != timeline.bar_samples
+
+
+@pytest.mark.parametrize("beats", [[0.5, 0.5, 1.0], [0.5, 1.0, 0.75], [0.5, float("nan"), 1.0]])
+def test_degenerate_beats_are_rejected(beats: list[float]) -> None:
+    grid = Grid(bpm=120, beats=beats, downbeats=[0.5], time_signature="4/4")
+    with pytest.raises(TimelineError, match="beat"):
+        build_timeline(grid)
+
+
+def test_duplicate_or_unsorted_downbeats_are_rejected() -> None:
+    grid = make_grid(120, 4, 0.5)
+    for downbeats in ([0.5, 0.5], [2.5, 0.5]):
+        with pytest.raises(TimelineError, match="downbeats"):
+            build_timeline(grid.model_copy(update={"downbeats": downbeats}))
+
+
+@pytest.mark.parametrize("bars", [0, 3, -1])
+def test_count_in_bars_is_validated_when_called_directly(bars: int) -> None:
+    with pytest.raises(TimelineError, match="count_in_bars"):
+        build_timeline(make_grid(120, 4, 0.5), count_in_bars=bars)
+
+
+def test_section_outside_the_grid_snaps_to_the_nearest_downbeat() -> None:
+    timeline = build_timeline(make_grid(120, 4, 0.5))  # downbeats from 0.5 s to 14.5 s
+    [early, late] = section_cues(
+        timeline,
+        [Section(name=SectionName.INTRO, start=0.0), Section(name=SectionName.TAG, start=99.0)],
+    )
+    assert early.downbeat == timeline.downbeats[0]
+    assert early.cue == timeline.count_in_start
+    assert late.downbeat == timeline.downbeats[-1]
+    assert late.cue == timeline.downbeats[-2]
+
+
+@pytest.mark.parametrize("seconds", [-1.0, float("nan"), float("inf")])
+def test_snap_rejects_negative_and_non_finite_times(seconds: float) -> None:
+    timeline = build_timeline(make_grid(120, 4, 0.5))
+    with pytest.raises(TimelineError):
+        snap_to_downbeat(timeline, seconds)
+
+
 def test_cue_before_zero_is_skipped_not_clamped() -> None:
     assert cue_position([50, 100], index=0, bar_samples=88200) is None
     assert cue_position([50, 100], index=1, bar_samples=88200) == 50

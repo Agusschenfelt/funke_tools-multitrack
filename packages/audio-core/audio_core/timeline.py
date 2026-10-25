@@ -13,6 +13,7 @@ signature from the number of detected beats per bar (6 beats per bar becomes "6/
 beats are the six eighth notes, and the click and count-in follow those six beats.
 """
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -76,25 +77,44 @@ def beats_per_bar(time_signature: str) -> int:
 def mean_beat_interval(grid: Grid, bpb: int) -> float:
     """Mean beat interval in seconds over the first two bars starting at the first downbeat.
 
-    Falls back to every detected beat when fewer than two bars of beats follow ``t0``.
+    Falls back to every detected beat when fewer than two bars of beats follow ``t0``. Beats must
+    be finite and strictly increasing; duplicates or unsorted beats would yield a zero or negative
+    interval and a meaningless bar length, so they are rejected.
     """
     beats = grid.beats
     if len(beats) < 2:
         raise TimelineError("at least two beats are required to build a timeline")
+    if not all(math.isfinite(b) for b in beats):
+        raise TimelineError("beats must be finite numbers")
+    if any(later <= earlier for earlier, later in zip(beats, beats[1:], strict=False)):
+        raise TimelineError(
+            "beats must be strictly increasing (found a duplicate or unsorted beat)"
+        )
     first = next((i for i, b in enumerate(beats) if b >= grid.downbeats[0] - 1e-3), len(beats))
     window = beats[first : first + 2 * bpb + 1]
     if len(window) < 2 * bpb + 1:
         window = beats
-    return (window[-1] - window[0]) / (len(window) - 1)
+    interval = (window[-1] - window[0]) / (len(window) - 1)
+    if not math.isfinite(interval) or interval <= 0:
+        raise TimelineError(f"beat interval must be positive, got {interval!r}")
+    return interval
 
 
 def build_timeline(grid: Grid, count_in_bars: int = 1, sample_rate: int = SAMPLE_RATE) -> Timeline:
     """Build the count-in timeline for ``grid`` at ``sample_rate`` (the internal rate)."""
+    if count_in_bars not in (1, 2):
+        raise TimelineError(f"count_in_bars must be 1 or 2, got {count_in_bars!r}")
     if not grid.downbeats:
         raise TimelineError("at least one downbeat is required to place the count-in")
+    if not all(math.isfinite(d) for d in grid.downbeats) or any(
+        later <= earlier for earlier, later in zip(grid.downbeats, grid.downbeats[1:], strict=False)
+    ):
+        raise TimelineError("downbeats must be finite and strictly increasing")
     bpb = beats_per_bar(grid.time_signature)
     interval = mean_beat_interval(grid, bpb)
     bar_samples = round(bpb * interval * sample_rate)
+    if bar_samples < 1:
+        raise TimelineError("bar length rounds to zero samples")
     count_in_samples = count_in_bars * bar_samples
     pad = max(0, count_in_samples - round(grid.downbeats[0] * sample_rate))
 
@@ -117,7 +137,13 @@ def build_timeline(grid: Grid, count_in_bars: int = 1, sample_rate: int = SAMPLE
 
 
 def snap_to_downbeat(timeline: Timeline, seconds: float) -> int:
-    """Index of the downbeat nearest to an original-song time (ties go to the earlier one)."""
+    """Index of the downbeat nearest to an original-song time (ties go to the earlier one).
+
+    A time before the first downbeat snaps to the first one and a time after the last snaps to the
+    last. Negative or non-finite times are rejected.
+    """
+    if not math.isfinite(seconds) or seconds < 0:
+        raise TimelineError(f"section time must be finite and not negative, got {seconds!r}")
     target = round(seconds * timeline.sample_rate) + timeline.pad_samples
     return min(range(len(timeline.downbeats)), key=lambda i: abs(timeline.downbeats[i] - target))
 
@@ -125,9 +151,11 @@ def snap_to_downbeat(timeline: Timeline, seconds: float) -> int:
 def cue_position(downbeats: Sequence[int], index: int, bar_samples: int) -> int | None:
     """Cue sample for the section on ``downbeats[index]``: the bar preceding it.
 
-    Uses the actual previous downbeat when there is one, else the section downbeat minus one bar.
-    A cue that would land before sample 0 is skipped (None) rather than clamped, because a
-    clamped cue would not start exactly one bar ahead of its section.
+    "One bar" means the span to the previous detected downbeat, so with uneven bars the cue sits on
+    that downbeat and the distance to the section is not necessarily ``bar_samples``. For the first
+    downbeat there is no previous one, so it falls back to the section downbeat minus
+    ``bar_samples``. A cue that would land before sample 0 is skipped (None) rather than clamped,
+    because a clamped cue would not start exactly one bar ahead of its section.
     """
     cue = downbeats[index - 1] if index > 0 else downbeats[index] - bar_samples
     return cue if cue >= 0 else None
