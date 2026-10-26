@@ -1,0 +1,169 @@
+# Production stack for the shared VPS. Project name: multitrack.
+# Run with the env file kept ON THE VPS (never in the repo):
+#   docker compose -f infra/prod/docker-compose.prod.yml --env-file /opt/multitrack/env.prod up -d --build
+#
+# Isolation model
+# - Nothing publishes a port. Only mt-web and mt-api join the Caddy network (external, name in
+#   CADDY_NETWORK); Caddy reaches them by container name.
+# - multitrack_internal is `internal: true` (no outbound route): redis, postgres, api, worker.
+# - The worker also joins multitrack_egress (plain bridge) ONLY so it can download model weights
+#   on the first job; after the cache volume is warm you can drop that network (see README).
+# - Services that join the shared Caddy network are named mt-web / mt-api on purpose: compose adds
+#   the service name as a DNS alias on every network it joins, and a generic `api` or `web` alias
+#   could collide with client containers on that network.
+# - Every container lives under multitrack.slice (infra/prod/multitrack.slice), which caps the
+#   whole stack, and runs with a low cpu_shares weight so client containers win under contention.
+name: multitrack
+
+x-common: &common
+  restart: unless-stopped
+  cgroup_parent: multitrack.slice
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+x-env: &app-env
+  STORAGE_ROOT: /data
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+
+services:
+  redis:
+    <<: *common
+    image: redis:7-alpine
+    # RQ keeps queue state in Redis: noeviction makes writes fail loudly instead of dropping jobs.
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 96mb --maxmemory-policy noeviction --save "" --appendonly no
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    networks: [internal]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.25
+    cpu_shares: 256
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    <<: *common
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=30"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    cpu_shares: 256
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mt-api:
+    <<: *common
+    container_name: multitrack-api
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: multitrack-api:prod
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SIGNING_SECRET: ${SIGNING_SECRET:?set SIGNING_SECRET (openssl rand -hex 32)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
+      LOST_JOB_GRACE_SECONDS: ${LOST_JOB_GRACE_SECONDS:-300}
+    volumes:
+      - storage:/data
+    networks: [internal, caddy]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1
+    cpu_shares: 256
+    pids_limit: 128
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/openapi.json', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  worker-cpu:
+    <<: *common
+    build:
+      context: ../..
+      dockerfile: workers/cpu/Dockerfile
+    image: multitrack-worker-cpu:prod
+    environment:
+      <<: *app-env
+      SONG_TTL_HOURS: ${SONG_TTL_HOURS:-24}
+    volumes:
+      - storage:/data
+      - model_cache:/cache
+    networks: [internal, egress]
+    # Measured peak 2.9 GiB for a 4-minute song (scripts/measure_resources.py). No swap.
+    cpus: 2
+    cpu_shares: 256
+    mem_limit: 3500m
+    memswap_limit: 3500m
+    pids_limit: 256
+    depends_on:
+      redis: {condition: service_healthy}
+    # Graceful stop lets RQ finish bookkeeping; a running separation is not worth waiting for.
+    stop_grace_period: 30s
+
+  mt-web:
+    <<: *common
+    container_name: multitrack-web
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_MAX_UPLOAD_MB: ${NEXT_PUBLIC_MAX_UPLOAD_MB:-100}
+    image: multitrack-web:prod
+    networks: [caddy]
+    mem_limit: 192m
+    memswap_limit: 192m
+    cpus: 0.5
+    cpu_shares: 256
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+networks:
+  internal:
+    name: multitrack_internal
+    internal: true
+  egress:
+    name: multitrack_egress
+  caddy:
+    name: ${CADDY_NETWORK:?set CADDY_NETWORK}
+    external: true
+
+volumes:
+  postgres_data:
+  storage:
+  model_cache:

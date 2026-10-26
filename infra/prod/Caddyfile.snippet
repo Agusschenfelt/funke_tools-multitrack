@@ -1,0 +1,44 @@
+# Route block to ADD to the existing Caddy config (do not replace anything else).
+# Replace tool.example.com with the DNS name that points at the VPS.
+# Caddy obtains the TLS certificate automatically, but only if that name's A record already points
+# to this server and ports 80/443 reach Caddy (they do, since it already serves other sites).
+# Upstreams use container names on the shared Caddy network (multitrack-web / multitrack-api),
+# so Caddy must be attached to that network (see README).
+# Use `docker network connect`, never edit other sites' blocks.
+
+tool.example.com {
+	encode zstd gzip
+
+	# API under /api; the prefix is stripped before it reaches FastAPI.
+	# Body cap = MAX_UPLOAD_MB (100) plus ~2 MB of multipart overhead.
+	handle /api/* {
+		uri strip_prefix /api
+		request_body {
+			max_size 102MB
+		}
+		reverse_proxy multitrack-api:8000 {
+			# Separation jobs are async, but uploads of 100 MB on slow links need generous timeouts.
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy multitrack-web:3000
+	}
+}
+
+# Alternative with a separate API host (build the web image with NEXT_PUBLIC_API_URL=https://api.example.com
+# and set CORS_ORIGINS=https://tool.example.com):
+#
+# tool.example.com {
+# 	reverse_proxy multitrack-web:3000
+# }
+# api.example.com {
+# 	request_body {
+# 		max_size 102MB
+# 	}
+# 	reverse_proxy multitrack-api:8000
+# }
