@@ -24,3 +24,6 @@ tests/fixtures/generated/*.wav
 
 # Tooling caches
 .atl/
+
+# Impeccable review captures (regenerated per review)
+.impeccable/review/
