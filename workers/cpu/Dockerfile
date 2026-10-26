@@ -24,7 +24,8 @@ COPY workers/cpu workers/cpu
 
 WORKDIR /app/workers/cpu
 # Linux resolves torch>=2.6 +cpu wheels from the PyTorch CPU index (see [tool.uv.sources] in workers/cpu/pyproject.toml).
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
+# --locked (not --frozen): the build fails if uv.lock is stale versus pyproject.toml instead of silently using it.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev
 
 # /cache holds model weights (torch hub, demucs, beat_this); mount a volume there.
 RUN useradd --system --uid 10001 --create-home app \

@@ -20,6 +20,7 @@ dev = [
     "fakeredis",
 ]
 
+# Keep identical to packages/audio-core/pyproject.toml (checked by tests/test_torch_sources.py).
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

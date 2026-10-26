@@ -56,7 +56,8 @@ dev = [
 
 # Linux resolves torch from the PyTorch CPU index (no CUDA/nvidia/triton wheels, much smaller image).
 # macOS keeps PyPI. uv only honors [tool.uv.sources] of the project being locked, so the workers/cpu
-# pyproject repeats this block.
+# pyproject repeats this block;
+# workers/cpu/tests/test_torch_sources.py fails if the two copies drift.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

@@ -311,3 +311,16 @@ def test_real_rq_job_writes_a_result_marker_named_after_its_id(
     marker = json.loads(storage.get_bytes(song, "jobs/job-real.json"))
     assert marker["result"]["song_id"] == song
     assert not storage.exists(song, "jobs/job-real.lock")
+
+
+def test_stagepack_outside_rq_is_stored_under_a_recognisable_orphan_directory(
+    song: str, storage: LocalStorage, fake_models: None, caplog
+) -> None:
+    jobs.analyze_job(song, source_name="Mi Cancion.wav")
+    jobs.separate_job(song, source_name="Mi Cancion.wav")
+    with caplog.at_level("WARNING"):
+        name = jobs.stagepack_job(song, {"destination": "daw", "sample_rate": 48000})
+
+    (stored,) = storage.list_names(song, "packs/")
+    assert stored.startswith("packs/direct-") and stored.endswith(f"/{name}")
+    assert "outside an RQ job" in caplog.text

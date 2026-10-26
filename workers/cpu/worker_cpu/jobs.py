@@ -21,6 +21,7 @@ and only that, to recover the outcome of a job RQ has forgotten.
 
 import functools
 import json
+import logging
 import tempfile
 import uuid
 from collections.abc import Callable
@@ -51,6 +52,8 @@ from worker_cpu.storage import (
     pack_object_name,
     result_marker_name,
 )
+
+log = logging.getLogger(__name__)
 
 
 class JobError(RuntimeError):
@@ -240,8 +243,12 @@ def stagepack_job(song_id: str, options: dict[str, Any]) -> str:
         set_stage("saving")
         pack_name = result.zip_path.name
         # One directory per job: a second pack of the song never overwrites this one. Outside an
-        # RQ job (direct calls) a fresh id keeps the same guarantee.
-        job_id = getattr(get_current_job(), "id", None) or uuid.uuid4().hex
+        # RQ job (direct calls, no API row, no result marker) the directory is `direct-<random>`:
+        # still never overwriting anything, and recognisable as an orphan nothing tracks.
+        job_id = getattr(get_current_job(), "id", None)
+        if not job_id:
+            job_id = f"direct-{uuid.uuid4().hex}"
+            log.warning("stagepack_job ran outside an RQ job; the pack is stored under %s", job_id)
         storage.put_file(song_id, pack_object_name(job_id, pack_name), result.zip_path)
     set_stage("done")
     return pack_name
