@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# spoken cues copied from assets/cues by scripts/copy-cues.mjs
+/public/cues/
