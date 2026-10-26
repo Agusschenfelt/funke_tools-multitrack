@@ -9,7 +9,9 @@ That keeps a future object-store implementation (R2 is S3 compatible, a name map
 Well-known names:
 
 * ``source.<ext>``: the uploaded audio (``SOURCE_PREFIX``).
-* ``analysis.json``, ``sections.json``: pipeline outputs.
+* ``analysis.json``: analysis output.
+* ``sections.json``: the sections the user sees and edits; ``sections.detected.json``: the latest
+  detector output (see ``analyze_job`` for who writes which).
 * ``stems/<stem>.wav`` plus ``stems/stemset.json``: separation output (``STEMS_PREFIX``).
 * ``packs/<name>.zip``: built Stage Packs (``PACKS_PREFIX``).
 """
@@ -23,6 +25,7 @@ from typing import Protocol, runtime_checkable
 SOURCE_PREFIX = "source"
 ANALYSIS = "analysis.json"
 SECTIONS = "sections.json"
+SECTIONS_DETECTED = "sections.detected.json"
 STEMSET = "stems/stemset.json"
 STEMS_PREFIX = "stems/"
 PACKS_PREFIX = "packs/"
@@ -38,7 +41,7 @@ class StorageError(RuntimeError):
 @dataclass(frozen=True)
 class SongEntry:
     song_id: str
-    modified: float  # POSIX seconds of the newest artifact, used by the expiry job
+    modified: float  # POSIX seconds of the newest artifact
 
 
 @runtime_checkable

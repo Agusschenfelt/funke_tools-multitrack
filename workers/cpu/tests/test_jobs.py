@@ -12,9 +12,8 @@ from tests.conftest import STEM_NAMES, StageRecorder, requires_ffmpeg
 from worker_cpu import jobs
 from worker_cpu.storage import LocalStorage
 
-pytestmark = requires_ffmpeg
 
-
+@requires_ffmpeg
 def test_analyze_job_writes_both_jsons_and_reports_stages(
     song: str, storage: LocalStorage, fake_models: None, recorder: StageRecorder
 ) -> None:
@@ -29,12 +28,15 @@ def test_analyze_job_writes_both_jsons_and_reports_stages(
         "song_id": song,
         "analysis": "analysis.json",
         "sections": "sections.json",
+        "sections_detected": "sections.detected.json",
+        "sections_overwritten": False,
         "bpm": 120.0,
         "section_count": len(sections.sections),
     }
     json.dumps(result)
 
 
+@requires_ffmpeg
 def test_analyze_job_without_sections(
     song: str, storage: LocalStorage, fake_models: None, recorder: StageRecorder
 ) -> None:
@@ -46,6 +48,7 @@ def test_analyze_job_without_sections(
     assert analysis.source == "Mi Cancion.mp3"
 
 
+@requires_ffmpeg
 def test_jobs_run_without_a_job_context(song: str, fake_models: None) -> None:
     assert jobs.analyze_job(song)["bpm"] == 120.0
 
@@ -55,6 +58,7 @@ def test_analyze_job_without_source_fails(storage_root: Path, fake_models: None)
         jobs.analyze_job("ghost")
 
 
+@requires_ffmpeg
 def test_separate_job_stores_stems_and_stemset(
     song: str, storage: LocalStorage, fake_models: None, recorder: StageRecorder
 ) -> None:
@@ -67,6 +71,7 @@ def test_separate_job_stores_stems_and_stemset(
         assert storage.exists(song, f"stems/{name}.wav")
 
 
+@requires_ffmpeg
 def test_stagepack_job_requires_stems_and_analysis(song: str, fake_models: None) -> None:
     with pytest.raises(jobs.JobError, match="run separation first"):
         jobs.stagepack_job(song, {"destination": "daw"})
@@ -80,6 +85,7 @@ def test_stagepack_job_rejects_invalid_options(song: str, fake_models: None) -> 
         jobs.stagepack_job(song, {"destination": "vinyl"})
 
 
+@requires_ffmpeg
 def test_full_pipeline_builds_equal_length_pack(
     song: str, storage: LocalStorage, fake_models: None, recorder: StageRecorder
 ) -> None:
@@ -98,6 +104,7 @@ def test_full_pipeline_builds_equal_length_pack(
         assert "Secciones.txt" in archive.namelist()
 
 
+@requires_ffmpeg
 def test_jobs_run_through_an_rq_queue(
     song: str, storage: LocalStorage, fake_models: None, queue
 ) -> None:
@@ -115,3 +122,87 @@ def test_failed_job_is_recorded_by_the_queue(storage_root: Path, fake_models: No
     job = queue.enqueue(jobs.analyze_job, "ghost")
     assert job.get_status() == JobStatus.FAILED
     assert "no source audio" in job.latest_result().exc_string
+
+
+def test_source_selection_ignores_lookalikes(
+    song: str, storage: LocalStorage, tmp_path: Path
+) -> None:
+    other = tmp_path / "x.bin"
+    other.write_bytes(b"x")
+    storage.put_file(song, "sourcefoo.wav", other)
+    storage.put_file(song, "stems/source.wav", other)
+    assert jobs._source_name(storage, song) == "source.wav"
+
+
+def test_source_selection_rejects_ambiguity(
+    song: str, storage: LocalStorage, tmp_path: Path, fake_models: None
+) -> None:
+    other = tmp_path / "x.bin"
+    other.write_bytes(b"x")
+    storage.put_file(song, "source.mp3", other)
+    with pytest.raises(jobs.JobError, match="ambiguous source audio"):
+        jobs.analyze_job(song)
+    with pytest.raises(jobs.JobError, match="ambiguous source audio"):
+        jobs.separate_job(song)
+
+
+@requires_ffmpeg
+def test_rerun_keeps_edited_sections_and_refreshes_detected(
+    song: str, storage: LocalStorage, fake_models: None
+) -> None:
+    jobs.analyze_job(song)
+    edited = Sections.model_validate_json(storage.get_bytes(song, "sections.json"))
+    edited.sections[0].label = "edited by hand"
+    storage.put_bytes(song, "sections.json", edited.model_dump_json().encode())
+    storage.put_bytes(song, "sections.detected.json", b"stale")
+
+    result = jobs.analyze_job(song)
+
+    kept = Sections.model_validate_json(storage.get_bytes(song, "sections.json"))
+    assert kept.sections[0].label == "edited by hand"
+    detected = Sections.model_validate_json(storage.get_bytes(song, "sections.detected.json"))
+    assert detected.sections[0].label != "edited by hand"
+    assert result["sections_overwritten"] is False
+    assert result["sections"] == "sections.json"
+    assert result["sections_detected"] == "sections.detected.json"
+
+
+@requires_ffmpeg
+def test_overwrite_sections_replaces_the_editable_file(
+    song: str, storage: LocalStorage, fake_models: None
+) -> None:
+    jobs.analyze_job(song)
+    storage.put_bytes(song, "sections.json", b"user edit")
+    result = jobs.analyze_job(song, overwrite_sections=True)
+    assert storage.get_bytes(song, "sections.json") == storage.get_bytes(
+        song, "sections.detected.json"
+    )
+    assert result["sections_overwritten"] is True
+
+
+@requires_ffmpeg
+def test_rerun_without_sections_touches_no_section_file(
+    song: str, storage: LocalStorage, fake_models: None
+) -> None:
+    jobs.analyze_job(song)
+    storage.put_bytes(song, "sections.json", b"user edit")
+    result = jobs.analyze_job(song, sections=False)
+    assert storage.get_bytes(song, "sections.json") == b"user edit"
+    assert result["sections"] == "sections.json"
+    assert result["sections_detected"] is None
+
+
+@requires_ffmpeg
+def test_detection_failure_changes_no_file(
+    song: str, storage: LocalStorage, fake_models: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jobs.analyze_job(song)
+    before = {n: storage.get_bytes(song, n) for n in storage.list_names(song)}
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("detector crashed")
+
+    monkeypatch.setattr(jobs, "detect_sections", boom)
+    with pytest.raises(RuntimeError, match="detector crashed"):
+        jobs.analyze_job(song, overwrite_sections=True)
+    assert {n: storage.get_bytes(song, n) for n in storage.list_names(song)} == before

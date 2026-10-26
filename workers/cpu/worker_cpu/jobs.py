@@ -7,7 +7,9 @@ progress in ``job.meta["stage"]`` (a no-op when run outside an RQ job).
 Stages:
 
 * ``analyze_job``: decoding, analyzing (beats, key and loudness run inside one library call),
-  sections, saving, done.
+  sections, saving, done. Section files: ``sections.detected.json`` always holds the latest
+  detector output; ``sections.json`` is what users read and edit, so it is written only when it
+  does not exist yet or when ``overwrite_sections=True`` is passed explicitly.
 * ``separate_job``: decoding, separating, saving, done.
 * ``stagepack_job``: loading, packing, saving, done.
 """
@@ -31,6 +33,7 @@ from worker_cpu.storage import (
     ANALYSIS,
     PACKS_PREFIX,
     SECTIONS,
+    SECTIONS_DETECTED,
     SOURCE_PREFIX,
     STEMS_PREFIX,
     STEMSET,
@@ -53,9 +56,12 @@ def set_stage(stage: str) -> None:
 
 
 def _source_name(storage: Storage, song_id: str) -> str:
-    names = [n for n in storage.list_names(song_id, SOURCE_PREFIX) if "/" not in n]
+    """The single stored ``source.<ext>`` file; none or several is an error."""
+    names = [n for n in storage.list_names(song_id, SOURCE_PREFIX + ".") if "/" not in n]
     if not names:
         raise JobError(f"no source audio stored for song {song_id}")
+    if len(names) > 1:
+        raise JobError(f"ambiguous source audio for song {song_id}: {', '.join(names)}")
     return names[0]
 
 
@@ -66,11 +72,24 @@ def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, 
     return decode(local), name
 
 
-def analyze_job(song_id: str, *, sections: bool = True, source_name: str | None = None) -> dict:
+def analyze_job(
+    song_id: str,
+    *,
+    sections: bool = True,
+    source_name: str | None = None,
+    overwrite_sections: bool = False,
+) -> dict:
     """Decode the stored source, analyze it and (optionally) detect sections.
 
     ``source_name`` is the label written into the JSON ``source`` fields (and so the Stage Pack
     title); it defaults to the stored file name.
+
+    Sections: with ``sections=True`` the detector output is always saved as
+    ``sections.detected.json``; ``sections.json`` (the user-facing, editable file) is written only
+    when absent or when ``overwrite_sections`` is true, so a re-run never silently replaces edits.
+    With ``sections=False`` neither file is touched. A detection failure raises before anything
+    is saved, so a failed run changes no file. The song id is derived from the audio hash, so an
+    existing ``sections.json`` always describes the same audio.
     """
     storage = get_storage()
     with tempfile.TemporaryDirectory(prefix="worker-cpu-") as tmp:
@@ -88,14 +107,21 @@ def analyze_job(song_id: str, *, sections: bool = True, source_name: str | None 
             analysis.models["sections"] = sections_model_version()
         set_stage("saving")
         storage.put_bytes(song_id, ANALYSIS, analysis.model_dump_json(indent=2).encode())
+        overwritten = False
         if detected is not None:
-            storage.put_bytes(song_id, SECTIONS, detected.model_dump_json(indent=2).encode())
+            payload = detected.model_dump_json(indent=2).encode()
+            storage.put_bytes(song_id, SECTIONS_DETECTED, payload)
+            if overwrite_sections or not storage.exists(song_id, SECTIONS):
+                overwritten = storage.exists(song_id, SECTIONS)
+                storage.put_bytes(song_id, SECTIONS, payload)
     set_stage("done")
     grid = analysis.grid
     return {
         "song_id": song_id,
         "analysis": ANALYSIS,
-        "sections": SECTIONS if detected is not None else None,
+        "sections": SECTIONS if storage.exists(song_id, SECTIONS) else None,
+        "sections_detected": SECTIONS_DETECTED if detected is not None else None,
+        "sections_overwritten": overwritten,
         "bpm": grid.bpm if grid else None,
         "section_count": len(detected.sections) if detected is not None else 0,
     }
