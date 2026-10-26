@@ -12,6 +12,16 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 | Voz rioplatense propia | Grabar las 15 cues con una voz de la agencia | El brief pide cues en rioplatense. La única voz rioplatense de Piper (`es_AR/daniela`) tiene licencia CC BY-SA y una base sin licencia verificada |
 | Canciones de prueba | Conseguir canciones de uso libre (CC0 o CC BY) con secciones anotadas | Hacen falta para medir la calidad real de la detección de secciones y del beat tracking |
 
+## Prueba de la v1 con el equipo
+
+Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durante el desarrollo.
+
+- Subir 3 o 4 temas reales de distintos géneros (rock, cumbia, folklore, trap) y anotar si el BPM, el tono y el compás son correctos.
+- En el estudio: que los stems suenen juntos, que el click caiga en cada tiempo con el 1 acentuado, y que las cues habladas suenen un compás antes de cada sección.
+- Revisar si las secciones detectadas tienen sentido y cuánto hay que corregir en el editor.
+- Exportar un Stage Pack, importarlo en Playback, en Prime y en un DAW, y confirmar que todo arranca alineado.
+- Escuchar las cues en español y decidir si alcanza la voz sintética o hace falta grabar la voz rioplatense.
+
 ## Limitaciones conocidas
 
 ### Stage Pack
