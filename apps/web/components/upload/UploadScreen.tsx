@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, describeError, startAnalyze, startSeparate, uploadSong } from "@/lib/api";
 import type { TrackedJobs } from "@/lib/processing";
+import { rememberSong, updateRecent } from "@/lib/recentSongs";
 import { processingQuery, startMissingJobs } from "@/lib/startJobs";
 import { formatBytes } from "@/lib/format";
 import { ACCEPT, MAX_UPLOAD_MB, formatsLabel, validateFile } from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
+import { RecentSongs } from "./RecentSongs";
 import styles from "./UploadScreen.module.css";
 
 type State =
@@ -33,6 +35,7 @@ export function UploadScreen() {
         analyze: () => startAnalyze(songId, { sections: true }),
         separate: () => startSeparate(songId),
       });
+      updateRecent(songId, { jobs: tracked }, Date.now());
       if (error) {
         setState({ phase: "error", message: describeError(error), songId, file, started: tracked });
         return;
@@ -58,6 +61,15 @@ export function UploadScreen() {
           signal: controller.signal,
           onProgress: (fraction) => setState({ phase: "uploading", file, fraction }),
         });
+        rememberSong(
+          {
+            id: song.id,
+            filename: song.filename,
+            createdAt: Date.parse(song.created_at),
+            expiresAt: Date.parse(song.expires_at),
+          },
+          Date.now(),
+        );
         await startJobs(song.id, file);
       } catch (error) {
         if (error instanceof ApiError && error.kind === "aborted") {
@@ -175,6 +187,8 @@ export function UploadScreen() {
           )}
         </div>
       )}
+
+      <RecentSongs />
 
       <p className={styles.rights}>
         La herramienta separa audio y no otorga derechos sobre la música que subís. Subí solo
