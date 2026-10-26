@@ -16,9 +16,9 @@ import {
 import { isGoneError, statusAfterLookup } from "@/lib/recentVerification";
 import styles from "./RecentSongs.module.css";
 
-/** Songs this browser uploaded and that have not expired; each is checked against the API once. */
 const CLOCK_TICK_MS = 30_000;
 
+/** Songs this browser uploaded and that have not expired; each is checked against the API once. */
 export function RecentSongs() {
   const [entries, setEntries] = useState<RecentSong[] | null>(null);
   const [nowMs, setNowMs] = useState(0);

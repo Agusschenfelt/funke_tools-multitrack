@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # READ-ONLY. Waits until the RQ queue `cpu` has nothing queued and nothing running, so an update
-# does not interrupt a separation (they take ~15 min). Exit 0 = drained, 1 = still busy at timeout.
+# does not interrupt a separation (they take ~15 min). Exit 0 = drained, 1 = still busy at timeout,
+# 2 = the queue could not be read (worker down, Redis unreachable): do not treat that as drained.
 #
 #   infra/prod/drain.sh [timeout_seconds]        # default 1800
 #
@@ -21,7 +22,15 @@ print(len(q), StartedJobRegistry(queue=q).count)'
 deadline=$((SECONDS + timeout))
 while true; do
   # shellcheck disable=SC2086  # EXEC is a command prefix and must word-split
-  read -r queued running < <($EXEC python -c "$probe")
+  if ! out="$($EXEC python -c "$probe")"; then
+    echo "cannot read the queue (is worker-cpu running?): not drained" >&2
+    exit 2
+  fi
+  read -r queued running <<<"$out"
+  if ! [[ "$queued" =~ ^[0-9]+$ && "$running" =~ ^[0-9]+$ ]]; then
+    echo "unexpected queue probe output: '$out'" >&2
+    exit 2
+  fi
   echo "queued=$queued running=$running"
   if [ "$queued" = 0 ] && [ "$running" = 0 ]; then
     echo "drained: safe to update"

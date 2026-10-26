@@ -142,9 +142,10 @@ services:
     depends_on:
       mt-redis: {condition: service_healthy}
     # SIGTERM makes RQ do a warm shutdown: it stops taking jobs and lets the running one finish.
-    # A 4-minute separation takes ~15 min and the longest job timeout is 60 min, so the grace
-    # period must be long or Docker SIGKILLs the job mid-way. Drain first anyway (README, "Update").
-    stop_grace_period: 30m
+    # A 4-minute separation takes ~15 min and the longest job timeout is 60 min; the grace period
+    # matches that timeout so Docker never SIGKILLs a job RQ would still let run. Drain first anyway
+    # (README, "Update").
+    stop_grace_period: 60m
 
   mt-web:
     <<: *common
