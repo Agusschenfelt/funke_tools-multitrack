@@ -54,6 +54,9 @@ def sign(secret: str, song_id: str, name: str, expires_at: datetime) -> str:
 
 
 def verify(secret: str, token: str, now: datetime) -> Claims:
+    # Tokens are pure ASCII; reject anything else before it reaches the ASCII-only MAC encoder.
+    if not token.isascii():
+        raise TokenInvalid("malformed token")
     try:
         encoded, signature = token.split(".")
         provided = _unb64(signature)

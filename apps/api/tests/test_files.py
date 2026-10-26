@@ -111,3 +111,20 @@ def test_token_roundtrip_and_malformed_inputs():
         tokens.verify("other", token, now)
     with pytest.raises(tokens.TokenInvalid):
         tokens.verify("s", "no-dot", now)
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["%C3%A9.abc", "%C3%A9%C3%B1.%C3%BC", "abc.%E2%82%AC", "%F0%9F%8E%B5", "a.b.c", "%00.x"],
+)
+def test_non_ascii_or_malformed_tokens_are_403_never_500(client, token):
+    assert client.get(f"/files/{token}").status_code == 403
+
+
+def test_verify_rejects_non_ascii_tokens():
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    for token in ("é.sig", "payload.é", "ñ", "a.b‮"):
+        with pytest.raises(tokens.TokenInvalid):
+            tokens.verify("s", token, now)

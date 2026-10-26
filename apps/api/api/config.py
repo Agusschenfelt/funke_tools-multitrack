@@ -14,6 +14,7 @@ DEFAULT_STORAGE_ROOT = "./storage"
 DEFAULT_EXTENSIONS = ".wav,.mp3,.flac,.m4a,.aac,.ogg,.aif,.aiff"
 MAX_TOKEN_TTL_SECONDS = 24 * 3600
 SONG_TTL_HOURS = 24
+DEFAULT_LOST_JOB_GRACE_SECONDS = 300
 
 
 class ConfigError(RuntimeError):
@@ -48,6 +49,8 @@ class Settings:
     # Lifetime of a download token; always capped by 24 h and by the song expiry.
     token_ttl_seconds: int = 3600
     song_ttl_hours: int = SONG_TTL_HOURS
+    # A non-terminal job the queue no longer knows is marked failed after this many seconds.
+    lost_job_grace_seconds: int = DEFAULT_LOST_JOB_GRACE_SECONDS
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -58,10 +61,13 @@ class Settings:
         try:
             max_mb = int(env.get("MAX_UPLOAD_MB", "100"))
             ttl = int(env.get("DOWNLOAD_TOKEN_TTL_SECONDS", "3600"))
+            grace = int(env.get("LOST_JOB_GRACE_SECONDS", str(DEFAULT_LOST_JOB_GRACE_SECONDS)))
         except ValueError as exc:
             raise ConfigError(f"invalid numeric setting: {exc}") from exc
         if max_mb <= 0 or ttl <= 0:
             raise ConfigError("MAX_UPLOAD_MB and DOWNLOAD_TOKEN_TTL_SECONDS must be positive")
+        if grace < 0:
+            raise ConfigError("LOST_JOB_GRACE_SECONDS must be >= 0")
         extensions = frozenset(
             e.lower() if e.startswith(".") else f".{e.lower()}"
             for e in _csv(env.get("ALLOWED_EXTENSIONS", DEFAULT_EXTENSIONS))
@@ -75,6 +81,7 @@ class Settings:
             allowed_extensions=extensions,
             cors_origins=cors_origins_from_env(env),
             token_ttl_seconds=min(ttl, MAX_TOKEN_TTL_SECONDS),
+            lost_job_grace_seconds=grace,
         )
 
     @property

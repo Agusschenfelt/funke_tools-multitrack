@@ -5,7 +5,7 @@ worker code. ``JobQueue`` is the seam tests replace with an in-memory double.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 QUEUE_NAME = "cpu"
@@ -57,8 +57,19 @@ class JobQueue(Protocol):
     ) -> None: ...
 
     def fetch(self, job_id: str) -> RemoteJob | None:
-        """The RQ job, or None when it is unknown (expired) or the backend is unreachable."""
+        """The RQ job, or None when the queue does not know it (expired or removed).
+
+        Raises ``QueueUnavailable`` when the backend cannot be reached, so callers never mistake
+        an outage for a lost job.
+        """
         ...
+
+
+def aware_utc(value: datetime | None) -> datetime | None:
+    """RQ stores naive UTC datetimes; return them as timezone-aware UTC."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _last_line(text: str | None) -> str | None:
@@ -114,8 +125,10 @@ class RqQueue:
                 if job.is_failed
                 else None,
                 result=job.result if job.is_finished else None,
-                started_at=job.started_at,
-                ended_at=job.ended_at,
+                started_at=aware_utc(job.started_at),
+                ended_at=aware_utc(job.ended_at),
             )
-        except (NoSuchJobError, RedisError):
+        except NoSuchJobError:
             return None
+        except RedisError as exc:
+            raise QueueUnavailable(str(exc)) from exc

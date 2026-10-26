@@ -1,7 +1,7 @@
 import pytest
 from audio_core.models import Analysis
 
-from api.models import Pack
+from api.models import Job, Pack
 from api.queueing import QueueUnavailable, RemoteJob, map_status
 
 
@@ -225,3 +225,183 @@ def test_job_row_ids_match_rq_ids(client, queue, song):
     ids = {client.post(f"/songs/{song['id']}/analyze").json()["job_id"] for _ in range(3)}
     assert ids == {c["job_id"] for c in queue.enqueued}
     assert len(ids) == 3
+
+
+# --- lost jobs, RQ datetimes and enqueue ordering -------------------------------------------
+
+
+def test_lost_job_within_grace_stays_queued(client, queue, clock, settings, song):
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    clock.advance(seconds=settings.lost_job_grace_seconds - 1)
+    body = client.get(f"/jobs/{job_id}").json()  # RQ has no record yet
+
+    assert body["status"] == "queued"
+    assert body["error"] is None
+
+
+def test_lost_job_is_failed_after_grace(client, queue, clock, settings, song):
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+    body = client.get(f"/jobs/{job_id}").json()
+
+    assert body["status"] == "failed"
+    assert "job lost" in body["error"]
+    assert body["finished_at"] is not None
+    # Terminal rows are immutable: a later reappearance in RQ does not resurrect it.
+    queue.remote[job_id] = RemoteJob(status="started")
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "failed"
+
+
+def test_running_job_the_queue_forgot_is_also_failed(client, queue, clock, settings, song):
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    queue.remote[job_id] = RemoteJob(status="started", stage="analyzing")
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "running"
+    queue.remote.clear()
+    clock.advance(seconds=settings.lost_job_grace_seconds + 1)
+
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "failed"
+
+
+def test_queue_outage_does_not_fail_the_job(client, queue, clock, settings, song):
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    clock.advance(hours=1)
+
+    def down(_job_id):
+        raise QueueUnavailable("redis down")
+
+    queue.fetch = down
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "queued"
+
+
+def test_aware_utc_converts_naive_and_keeps_aware():
+    from datetime import UTC, datetime, timedelta, timezone
+
+    from api.queueing import aware_utc
+
+    assert aware_utc(None) is None
+    naive = datetime(2026, 10, 26, 12, 0)
+    assert aware_utc(naive) == datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
+    plus_two = datetime(2026, 10, 26, 14, 0, tzinfo=timezone(timedelta(hours=2)))
+    converted = aware_utc(plus_two)
+    assert converted == datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
+    assert converted.utcoffset() == timedelta(0)
+
+
+class StubRqJob:
+    """Shape of ``rq.job.Job`` as read by ``RqQueue.fetch`` (RQ datetimes are naive UTC)."""
+
+    meta = {"stage": "analyzing"}
+    is_failed = False
+    is_finished = True
+    result = {"bpm": 100}
+
+    def __init__(self):
+        from datetime import datetime
+
+        self.started_at = datetime(2026, 10, 26, 12, 0, 5)
+        self.ended_at = datetime(2026, 10, 26, 12, 3, 0)
+
+    def get_status(self, refresh=True):
+        return "finished"
+
+    def latest_result(self):
+        return None
+
+
+def test_rq_queue_fetch_returns_aware_utc_datetimes(monkeypatch):
+    from datetime import UTC, datetime
+
+    from rq.job import Job
+
+    from api.queueing import RqQueue
+
+    monkeypatch.setattr(Job, "fetch", staticmethod(lambda job_id, connection: StubRqJob()))
+    queue = RqQueue("redis://unused")
+    queue._connection = object()
+    remote = queue.fetch("x")
+
+    assert remote.started_at == datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
+    assert remote.ended_at.tzinfo is not None
+    assert remote.result == {"bpm": 100}
+
+
+def test_rq_queue_fetch_distinguishes_missing_from_outage(monkeypatch):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+    from rq.exceptions import NoSuchJobError
+    from rq.job import Job
+
+    from api.queueing import RqQueue
+
+    queue = RqQueue("redis://unused")
+    queue._connection = object()
+
+    def missing(job_id, connection):
+        raise NoSuchJobError(job_id)
+
+    monkeypatch.setattr(Job, "fetch", staticmethod(missing))
+    assert queue.fetch("x") is None
+
+    def down(job_id, connection):
+        raise RedisConnectionError("refused")
+
+    monkeypatch.setattr(Job, "fetch", staticmethod(down))
+    with pytest.raises(QueueUnavailable):
+        queue.fetch("x")
+
+
+def test_finished_job_with_naive_rq_times_is_stored(client, queue, song):
+    """End to end: RqQueue-style aware datetimes bind to the UTC column without error."""
+    from datetime import UTC, datetime
+
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    queue.remote[job_id] = RemoteJob(
+        status="finished",
+        stage="done",
+        result={"bpm": 1},
+        started_at=datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC),
+        ended_at=datetime(2026, 10, 26, 12, 3, tzinfo=UTC),
+    )
+    body = client.get(f"/jobs/{job_id}").json()
+    assert body["finished_at"].startswith("2026-10-26T12:03:00")
+
+
+def test_job_row_is_committed_before_enqueue(client, queue, song):
+    seen = {}
+    original = queue.enqueue
+
+    def checking_enqueue(func, args, kwargs, *, job_id, timeout):
+        # A separate session only sees committed rows (a worker would).
+        with client.app.state.ctx.session_factory() as other:
+            seen["row"] = other.get(Job, job_id)
+        original(func, args, kwargs, job_id=job_id, timeout=timeout)
+
+    queue.enqueue = checking_enqueue
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+
+    assert seen["row"] is not None
+    assert seen["row"].id == job_id
+    assert seen["row"].status == "queued"
+
+
+def test_failed_enqueue_removes_job_and_pack_rows(client, queue, store, song):
+    put_analysis_and_stems(store, song["id"])
+    queue.fail_enqueue = QueueUnavailable("redis down")
+    response = client.post(f"/songs/{song['id']}/stagepack", json={"destination": "daw"})
+
+    assert response.status_code == 503
+    with client.app.state.ctx.session_factory() as session:
+        assert session.query(Job).count() == 0
+        assert session.query(Pack).count() == 0
+
+
+def test_reanalysis_never_asks_the_worker_to_overwrite_edited_sections(client, queue, store, song):
+    sid = song["id"]
+    edit = {"sections": [{"name": "intro", "start": 0.0}, {"name": "verse", "start": 8.0}]}
+    assert client.put(f"/songs/{sid}/sections", json=edit).status_code == 200
+    client.post(f"/songs/{sid}/analyze")
+
+    kwargs = queue.enqueued[-1]["kwargs"]
+    assert "overwrite_sections" not in kwargs
+    sections = client.get(f"/songs/{sid}/sections").json()
+    assert sections["edited"] is True
+    assert [s["name"] for s in sections["sections"]] == ["intro", "verse"]

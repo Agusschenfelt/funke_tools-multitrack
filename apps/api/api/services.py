@@ -76,7 +76,11 @@ def create_job(
     timeout: int,
     pack_options: dict | None = None,
 ) -> str:
-    """Insert the Job row, enqueue on RQ with the same id, commit; 503 if the queue is down."""
+    """Commit the Job row, then enqueue on RQ with the same id; 503 if the queue is down.
+
+    The row is committed first so a fast worker (or a status poll) never sees an RQ job without
+    its row. If enqueueing fails the rows are removed again (compensation) before the 503.
+    """
     job_id = str(uuid.uuid4())
     now = ctx.now()
     session.add(Job(id=job_id, song_id=song.id, kind=kind, status=QUEUED, created_at=now))
@@ -90,13 +94,14 @@ def create_job(
                 created_at=now,
             )
         )
-    session.flush()
+    session.commit()
     try:
         ctx.queue.enqueue(func, args, kwargs, job_id=job_id, timeout=timeout)
     except QueueUnavailable:
-        session.rollback()
+        session.query(Pack).filter(Pack.job_id == job_id).delete()
+        session.query(Job).filter(Job.id == job_id).delete()
+        session.commit()
         raise HTTPException(503, "job queue unavailable") from None
-    session.commit()
     return job_id
 
 
@@ -113,10 +118,13 @@ def sync_job(session: Session, ctx: AppContext, job: Job) -> Job:
     """Merge the live RQ state into the DB row. Terminal rows are immutable."""
     if job.status in TERMINAL:
         return job
-    remote = ctx.queue.fetch(job.id)
-    if remote is None:
-        return job
     now = ctx.now()
+    try:
+        remote = ctx.queue.fetch(job.id)
+    except QueueUnavailable:
+        return job  # an outage says nothing about the job; keep the last known state
+    if remote is None:
+        return _fail_if_lost(session, ctx, job, now)
     status = map_status(remote.status)
     job.status = status
     job.stage = remote.stage or job.stage
@@ -129,6 +137,23 @@ def sync_job(session: Session, ctx: AppContext, job: Job) -> Job:
     if status == FINISHED:
         job.result = _normalize_result(job.kind, remote.result)
         _apply_finished(session, ctx, job)
+    session.commit()
+    return job
+
+
+LOST_JOB_ERROR = "job lost: the queue no longer knows it (expired or removed before finishing)"
+
+
+def _fail_if_lost(session: Session, ctx: AppContext, job: Job, now: datetime) -> Job:
+    """Fail a non-terminal row the queue forgot, once the grace period has passed.
+
+    The grace covers the short window between committing the row and the enqueue landing.
+    """
+    if now - job.created_at < timedelta(seconds=ctx.settings.lost_job_grace_seconds):
+        return job
+    job.status = FAILED
+    job.error = LOST_JOB_ERROR
+    job.finished_at = now
     session.commit()
     return job
 
