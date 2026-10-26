@@ -280,7 +280,14 @@ function StudioStage({
 
   return (
     <>
-      <SongBar songId={songId} title={titleFromFilename(song.filename)} analysis={analysis} />
+      <SongBar
+        songId={songId}
+        title={titleFromFilename(song.filename)}
+        analysis={analysis}
+        dirty={editor.dirty}
+        saving={editor.saving}
+        onSave={editor.save}
+      />
 
       {state.status === "error" && (
         <div role="alert" className={styles.notice}>

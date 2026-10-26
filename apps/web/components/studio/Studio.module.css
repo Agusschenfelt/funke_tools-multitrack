@@ -66,6 +66,23 @@
   background: var(--orange-press);
 }
 
+.hold {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  color: var(--warning);
+}
+
+.hold p {
+  max-width: var(--measure);
+}
+
 .stage {
   border-top: 1px solid var(--rule);
 }
