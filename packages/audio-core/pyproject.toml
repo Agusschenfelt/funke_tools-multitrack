@@ -26,8 +26,12 @@ audio-core = "audio_core.cli:app"
 [project.optional-dependencies]
 # ml: model inference (beat tracking and stem separation). Needed by the CPU worker only.
 ml = [
-    "torch>=2,<2.3",  # cap: PyTorch publishes no Intel macOS wheels after 2.2.2
-    "torchaudio<2.3",  # cap: must match the torch 2.2.x line (same Intel macOS wheel limit)
+    # Intel macOS: PyTorch publishes no wheels after 2.2.2, so cap there only.
+    "torch>=2,<2.3; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "torchaudio<2.3; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    # Everywhere else (Linux worker image): torch<2.6 is in the CVE-2025-32434 range.
+    "torch>=2.6; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+    "torchaudio>=2.6; sys_platform != 'darwin' or platform_machine != 'x86_64'",
     "beat-this>=1.1.0",
     "demucs>=4.1.0",
 ]

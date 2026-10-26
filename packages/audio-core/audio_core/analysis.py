@@ -270,7 +270,11 @@ def measure_loudness(audio: np.ndarray) -> Loudness:
 def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = None) -> Analysis:
     """Analyze decoded audio of shape (2, n_samples) at 44.1 kHz."""
     options = options or AnalyzeOptions()
-    resolve_key_backend(options.key_backend)  # fail fast, before the slow beat model runs
+    key_backend = resolve_key_backend(options.key_backend)
+    # Fail fast, before the slow beat model runs: a missing extra must not surface only after it.
+    if key_backend == "librosa":
+        require("librosa")
+    require("pyloudnorm")
     beats, downbeats = detect_beats(
         audio, checkpoint=options.beat_checkpoint, device=options.device
     )

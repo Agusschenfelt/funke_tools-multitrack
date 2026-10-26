@@ -6,14 +6,14 @@ import textwrap
 
 import pytest
 
-from audio_core.extras import MissingExtraError, require
+from audio_core.extras import EXTRA_FOR_MODULE, MissingExtraError, require
 
-BLOCKER = textwrap.dedent(
+BLOCKER_TEMPLATE = textwrap.dedent(
     """
     import importlib.abc
     import sys
 
-    BLOCKED = {"torch", "torchaudio", "demucs", "beat_this", "librosa", "pyloudnorm", "numba"}
+    BLOCKED = {blocked}
 
     class Blocker(importlib.abc.MetaPathFinder):
         def find_spec(self, name, path, target=None):
@@ -26,9 +26,12 @@ BLOCKER = textwrap.dedent(
 )
 
 
-def run_blocked(code: str) -> subprocess.CompletedProcess[str]:
+def run_blocked(code: str, blocked: set[str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run ``code`` in a subprocess where the given modules (default: every heavy one) fail."""
+    modules = set(EXTRA_FOR_MODULE) if blocked is None else blocked
+    blocker = BLOCKER_TEMPLATE.replace("{blocked}", repr(modules))
     return subprocess.run(
-        [sys.executable, "-c", BLOCKER + textwrap.dedent(code)],
+        [sys.executable, "-c", blocker + textwrap.dedent(code)],
         capture_output=True,
         text=True,
         check=False,
@@ -103,3 +106,43 @@ def test_cli_missing_extra_exits_1(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
 def test_require_reraises_unrelated_import_errors() -> None:
     with pytest.raises(ModuleNotFoundError):
         require("definitely_not_a_module_xyz")
+
+
+def test_analyze_without_analysis_extra_names_the_extra() -> None:
+    # Only the analysis extra is missing: the check must fail fast, before beat tracking runs.
+    result = run_blocked(
+        """
+        import numpy as np
+        from audio_core.analysis import AnalyzeOptions, analyze
+        from audio_core.extras import MissingExtraError
+        try:
+            analyze(
+                np.zeros((2, 100), dtype=np.float32),
+                "x.wav",
+                options=AnalyzeOptions(key_backend="librosa"),
+            )
+        except MissingExtraError as exc:
+            assert exc.extra == "analysis", exc
+            assert "audio-core[analysis]" in str(exc), exc
+            print("ok")
+        """,
+        blocked={"librosa", "pyloudnorm", "numba"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
+
+
+def test_require_names_the_extra_for_every_heavy_module() -> None:
+    for module, extra in EXTRA_FOR_MODULE.items():
+        result = run_blocked(
+            f"""
+            from audio_core.extras import MissingExtraError, require
+            try:
+                require("{module}")
+            except MissingExtraError as exc:
+                assert exc.extra == "{extra}", exc
+                print("ok")
+            """
+        )
+        assert result.returncode == 0, (module, result.stderr)
+        assert "ok" in result.stdout, module

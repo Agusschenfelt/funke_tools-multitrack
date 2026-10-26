@@ -37,10 +37,7 @@ def require(module: str) -> ModuleType:
     try:
         return importlib.import_module(module)
     except ModuleNotFoundError as exc:
-        top = module.split(".")[0]
-        if exc.name is not None and exc.name.split(".")[0] in EXTRA_FOR_MODULE:
-            missing = exc.name.split(".")[0]
+        missing = (exc.name or "").split(".")[0]
+        if missing in EXTRA_FOR_MODULE:
             raise MissingExtraError(missing, EXTRA_FOR_MODULE[missing]) from exc
-        if top in EXTRA_FOR_MODULE and exc.name == top:
-            raise MissingExtraError(top, EXTRA_FOR_MODULE[top]) from exc
         raise
