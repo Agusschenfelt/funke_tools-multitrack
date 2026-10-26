@@ -30,6 +30,10 @@
   transition: background-color var(--duration-fast) var(--ease-out);
 }
 
+.section {
+  container-type: inline-size;
+}
+
 .section:hover {
   background: var(--ink-raised);
 }
@@ -61,12 +65,84 @@
   color: inherit;
 }
 
+/* The selected section: a frame, apart from the orange top mark that follows the playhead. */
+.selected {
+  background: var(--ink-raised);
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}
+
+/* A weak or missing detected label: plain words, no alarm colour beyond the warning tone. */
+.review {
+  flex: none;
+  color: var(--warning);
+  font-size: 0.75rem;
+  text-transform: lowercase;
+}
+
+@container (max-width: 7rem) {
+  .review {
+    width: 0.5rem;
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--warning);
+    color: transparent;
+    font-size: 0;
+  }
+}
+
 .repeatLine {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 1px;
   background: var(--rule);
+  pointer-events: none;
+}
+
+.edge {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 1.25rem;
+  height: 2.75rem;
+  margin-left: -0.625rem;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.grip {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  left: 50%;
+  width: 0.25rem;
+  margin-left: -0.125rem;
+  border-radius: 1px;
+  background: var(--graphite);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.edge:hover .grip,
+.edge:focus-visible .grip,
+.edgeDragging .grip {
+  background: var(--orange);
+  opacity: 1;
+}
+
+.tip {
+  position: absolute;
+  top: -1.75rem;
+  left: 50%;
+  padding: 0 var(--space-2);
+  background: var(--orange);
+  color: var(--on-orange);
+  font-size: var(--text-sm);
+  line-height: 1.5rem;
+  white-space: nowrap;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -94,7 +170,17 @@
   color: var(--paper);
 }
 
+@media (pointer: coarse) {
+  .edge {
+    display: none;
+  }
+}
+
 @media (max-width: 47.99rem) {
+  .edge {
+    display: none;
+  }
+
   .strip {
     grid-template-columns: minmax(0, 1fr);
   }

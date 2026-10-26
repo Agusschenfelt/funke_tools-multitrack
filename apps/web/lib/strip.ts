@@ -64,6 +64,50 @@ export function locateActive(
   return null;
 }
 
+/** One section as drawn: its flat index in the edited list plus its place in a repeat group. */
+export interface StripItem {
+  index: number;
+  group: number;
+  label: string;
+  /** Group size; > 1 draws the repeat signs on the group's first and last section. */
+  count: number;
+  first: boolean;
+  last: boolean;
+  start: number;
+  end: number;
+}
+
+/** The groups flattened to one entry per section, in song order. */
+export function stripItems(groups: readonly StripGroup[]): StripItem[] {
+  const items: StripItem[] = [];
+  groups.forEach((group, g) => {
+    group.spans.forEach((span, s) => {
+      items.push({
+        index: items.length,
+        group: g,
+        label: group.label,
+        count: group.count,
+        first: s === 0,
+        last: s === group.spans.length - 1,
+        start: span.start,
+        end: span.end,
+      });
+    });
+  });
+  return items;
+}
+
+/** Flat section index of an active `{ group, span }`; null when nothing is active. */
+export function flatIndex(
+  groups: readonly StripGroup[],
+  active: { group: number; span: number } | null,
+): number | null {
+  if (!active) return null;
+  let index = active.span;
+  for (let g = 0; g < active.group; g += 1) index += groups[g]?.spans.length ?? 0;
+  return index;
+}
+
 export interface BarTick {
   bar: number;
   time: number;

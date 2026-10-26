@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barTicks, buildStrip, locateActive, titleFromFilename } from "./strip";
+import { barTicks, buildStrip, flatIndex, locateActive, stripItems, titleFromFilename } from "./strip";
 
 const downbeats = Array.from({ length: 32 }, (_, i) => 0.5 + i * 2);
 const sections = [
@@ -73,5 +73,26 @@ describe("titleFromFilename", () => {
   it("drops the extension", () => {
     expect(titleFromFilename("mi_tema.final.mp3")).toBe("mi tema.final");
     expect(titleFromFilename("t.wav")).toBe("t");
+  });
+});
+
+describe("stripItems and flatIndex", () => {
+  it("flattens groups to one item per section with repeat ends", () => {
+    const groups = buildStrip(sections, downbeats, 64);
+    const items = stripItems(groups);
+    expect(items.map((i) => i.index)).toEqual(items.map((_, n) => n));
+    expect(items).toHaveLength(sections.length);
+    const repeated = items.filter((i) => i.count > 1);
+    expect(repeated.length).toBeGreaterThan(1);
+    expect(repeated[0].first).toBe(true);
+    expect(repeated[repeated.length - 1].last).toBe(true);
+  });
+
+  it("maps an active group and span to its flat index", () => {
+    const groups = buildStrip(sections, downbeats, 64);
+    const items = stripItems(groups);
+    const g = groups.findIndex((x) => x.count > 1);
+    expect(flatIndex(groups, { group: g, span: 1 })).toBe(items.findIndex((i) => i.group === g && !i.first));
+    expect(flatIndex(groups, null)).toBeNull();
   });
 });

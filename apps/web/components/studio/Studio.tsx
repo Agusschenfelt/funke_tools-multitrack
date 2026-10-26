@@ -17,18 +17,27 @@ import { beatsPerBar } from "@/lib/audio/grid";
 import { stemGains } from "@/lib/audio/mix";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
 import { orderStems } from "@/lib/audio/stems";
-import { buildStrip, locateActive, titleFromFilename } from "@/lib/strip";
+import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
 import { Lane } from "./Lane";
+import { SectionPanel } from "./SectionPanel";
 import { SectionStrip } from "./SectionStrip";
 import { SongBar } from "./SongBar";
 import { Transport } from "./Transport";
+import { useSectionEditor } from "./useSectionEditor";
 import lanes from "./Lane.module.css";
 import styles from "./Studio.module.css";
 
 type Load =
   | { phase: "loading" }
-  | { phase: "ready"; song: SongDetail; analysis: Analysis; sections: Section[] }
+  | {
+      phase: "ready";
+      song: SongDetail;
+      analysis: Analysis;
+      sections: Section[];
+      source: string | null;
+      edited: boolean;
+    }
   | { phase: "missing" }
   | { phase: "nostems" }
   | { phase: "error"; message: string };
@@ -50,7 +59,14 @@ export function Studio({ songId }: { songId: string }) {
           getAnalysis(songId, { signal }),
           getSections(songId, { signal }).catch(() => null),
         ]);
-        setLoad({ phase: "ready", song, analysis, sections: sections?.sections ?? [] });
+        setLoad({
+          phase: "ready",
+          song,
+          analysis,
+          sections: sections?.sections ?? [],
+          source: sections?.source ?? null,
+          edited: sections?.edited ?? false,
+        });
       })
       .catch((error) => {
         if (signal.aborted) return;
@@ -106,6 +122,8 @@ export function Studio({ songId }: { songId: string }) {
           song={load.song}
           analysis={load.analysis}
           sections={load.sections}
+          source={load.source}
+          edited={load.edited}
           onReload={reload}
         />
       )}
@@ -131,6 +149,8 @@ interface BodyProps {
   song: SongDetail;
   analysis: Analysis;
   sections: Section[];
+  source: string | null;
+  edited: boolean;
   onReload: () => void;
 }
 
@@ -176,7 +196,9 @@ function StudioStage({
   songId,
   song,
   analysis,
-  sections,
+  sections: initialSections,
+  source,
+  edited,
   onReload,
 }: BodyProps & { engine: StudioEngine }) {
   const state = useEngineState(engine);
@@ -188,6 +210,15 @@ function StudioStage({
   const perBar = beatsPerBar(grid?.time_signature);
   const duration = state.duration || analysis.duration;
   const names = useMemo(() => orderStems(song.artifacts.stems).map((s) => s.name), [song]);
+
+  const editor = useSectionEditor({
+    songId,
+    initial: initialSections,
+    source,
+    edited,
+    downbeats,
+  });
+  const sections = editor.sections;
 
   const groups = useMemo(
     () => buildStrip(sections, downbeats, duration),
@@ -231,6 +262,20 @@ function StudioStage({
   const gains = stemGains(state.mix);
   const activeGroup = active ? active.group : null;
   const activeSpan = active ? groups[active.group]?.spans[active.span] ?? null : null;
+  const activeIndex = flatIndex(groups, active);
+
+  const select = (index: number) => {
+    editor.select(index);
+    const section = sections[index];
+    if (section) engine.seek(section.start);
+  };
+  const playSection = (index: number) => {
+    const section = sections[index];
+    if (!section) return;
+    editor.select(index);
+    engine.seek(section.start);
+    void engine.play();
+  };
   const loadedCount = names.filter((name) => state.stems[name].phase === "ready").length;
 
   return (
@@ -252,12 +297,36 @@ function StudioStage({
       </p>
 
       <div className={styles.stage}>
+        <SectionPanel
+          sections={sections}
+          selected={editor.selected}
+          downbeats={downbeats}
+          dirty={editor.dirty}
+          saving={editor.saving}
+          status={editor.status}
+          canUndo={editor.canUndo}
+          canRedo={editor.canRedo}
+          onUndo={editor.undo}
+          onRedo={editor.redo}
+          onSave={editor.save}
+          onRename={editor.rename}
+          onSplit={() => editor.split(engine.getPosition())}
+          onMerge={editor.merge}
+          onNudge={editor.nudge}
+          onPlay={playSection}
+        />
         <SectionStrip
           engine={engine}
-          groups={groups}
+          sections={sections}
           downbeats={downbeats}
           duration={duration}
-          activeGroup={activeGroup}
+          activeIndex={activeIndex}
+          selected={editor.selected}
+          editedOnServer={editor.editedOnServer}
+          onSelect={select}
+          onPlay={playSection}
+          onMove={editor.move}
+          onNudge={editor.nudge}
         />
         <div className={lanes.lanes}>
           {names.map((name, index) => (
