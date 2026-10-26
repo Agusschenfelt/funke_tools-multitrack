@@ -27,6 +27,11 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 - La detección de secciones se hace sin modelos entrenados (ver abajo). Los cortes suelen salir bien, pero los nombres (verso, coro) van a errar seguido y se corrigen en el editor.
 - La segmentación agrupa sobre ventanas de 4 compases y después ajusta cada corte hasta 2 compases. Ese ajuste se afinó con una canción sintética limpia (los 7 cortes salieron exactos); con canciones reales todavía no se midió.
 
+### Backend
+
+- Si la limpieza borra una canción mientras un trabajo suyo está corriendo, el registro de salida que escribe el trabajo al terminar puede volver a crear la carpeta de la canción. Queda como carpeta huérfana hasta la limpieza manual del worker.
+- Antes de desplegar un cambio en el formato de los trabajos de la cola, hay que vaciar la cola `cpu`.
+
 ### Separación
 
 - La imagen Docker del worker pesa 10,5 GB porque torch para Linux baja los paquetes de CUDA desde PyPI. Usar el índice solo-CPU de PyTorch la achicaría mucho; está anotado en `infra/README.md`. La imagen de la API pesa 694 MB y no incluye torch.
