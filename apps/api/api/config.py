@@ -18,6 +18,11 @@ DEFAULT_CLEANUP_INTERVAL_SECONDS = 900
 DEFAULT_LOST_JOB_GRACE_SECONDS = 300
 
 
+MIN_SECRET_LENGTH = 32
+# Prefixes of the placeholder values shipped in documentation and ``.env.example``.
+PLACEHOLDER_SECRET_PREFIXES = ("changeme", "change-me", "change_me", "replace", "your-", "your_")
+
+
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
 
@@ -28,6 +33,21 @@ def normalize_database_url(url: str) -> str:
         if url.startswith(bare):
             return "postgresql+psycopg://" + url[len(bare) :]
     return url
+
+
+def check_signing_secret(secret: str, env: Mapping[str, str]) -> None:
+    """Refuse an empty, short or documented-placeholder secret unless explicitly allowed for dev."""
+    if not secret:
+        raise ConfigError("SIGNING_SECRET is required")
+    if env.get("ALLOW_INSECURE_SIGNING_SECRET") == "1":
+        return
+    weak = len(secret) < MIN_SECRET_LENGTH or secret.lower().startswith(PLACEHOLDER_SECRET_PREFIXES)
+    if weak:
+        raise ConfigError(
+            f"SIGNING_SECRET must be a random value of at least {MIN_SECRET_LENGTH} characters, "
+            "not a placeholder (generate one with: openssl rand -hex 32). "
+            "Set ALLOW_INSECURE_SIGNING_SECRET=1 to bypass this check for local development only."
+        )
 
 
 def _csv(value: str) -> tuple[str, ...]:
@@ -60,8 +80,7 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         env = env if env is not None else os.environ
         secret = env.get("SIGNING_SECRET", "")
-        if not secret:
-            raise ConfigError("SIGNING_SECRET is required")
+        check_signing_secret(secret, env)
         try:
             max_mb = int(env.get("MAX_UPLOAD_MB", "100"))
             ttl = int(env.get("DOWNLOAD_TOKEN_TTL_SECONDS", "3600"))
@@ -91,6 +110,11 @@ class Settings:
             cleanup_interval_seconds=interval,
             lost_job_grace_seconds=grace,
         )
+
+    @property
+    def result_ttl_seconds(self) -> int:
+        """How long RQ keeps job records: twice the song life, so a record outlives its song."""
+        return 2 * self.song_ttl_hours * 3600
 
     @property
     def max_upload_bytes(self) -> int:

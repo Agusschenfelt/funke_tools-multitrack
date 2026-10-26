@@ -16,7 +16,8 @@ song, still expired, is retried by the next sweep. Songs with a queued or runnin
 alone until they are ``INFLIGHT_MARGIN`` past expiry, so a slow job is not deleted from under its
 worker, but a job stuck forever cannot keep a song alive indefinitely.
 
-Safe to run from several places at once: deleting an already-deleted song is a no-op.
+Safe to run from several places at once: deleting an already-deleted song (its storage or its rows
+vanishing mid-sweep) counts as success, not as a failure.
 """
 
 import asyncio
@@ -29,11 +30,11 @@ from sqlalchemy import delete, select
 
 from api.deps import AppContext
 from api.models import Job, Pack, SectionsState, Song
+from api.queueing import ACTIVE
 
 log = logging.getLogger(__name__)
 
 INFLIGHT_MARGIN = timedelta(hours=1)
-ACTIVE_STATUSES = ("queued", "running")
 
 
 @dataclass
@@ -48,30 +49,47 @@ def sweep_expired(ctx: AppContext) -> SweepReport:
     now = ctx.now()
     report = SweepReport()
     with ctx.session_factory() as session:
-        expired = list(session.scalars(select(Song).where(Song.expires_at <= now)))
-        for song in expired:
-            song_id = song.id
+        # Plain tuples, not ORM instances: another sweep (or a commit of ours) deleting or
+        # expiring a row must not make the loop touch a stale object.
+        expired = [
+            (song_id, expires_at)
+            for song_id, expires_at in session.execute(
+                select(Song.id, Song.expires_at).where(Song.expires_at <= now)
+            )
+        ]
+        for song_id, expires_at in expired:
             try:
                 active = session.scalar(
-                    select(Job.id)
-                    .where(Job.song_id == song_id, Job.status.in_(ACTIVE_STATUSES))
-                    .limit(1)
+                    select(Job.id).where(Job.song_id == song_id, Job.status.in_(ACTIVE)).limit(1)
                 )
-                if active is not None and now < song.expires_at + INFLIGHT_MARGIN:
+                if active is not None and now < expires_at + INFLIGHT_MARGIN:
                     report.skipped_in_flight.append(song_id)
                     continue
                 ctx.storage.delete_song(song_id)
                 session.execute(delete(Job).where(Job.song_id == song_id))
                 session.execute(delete(Pack).where(Pack.song_id == song_id))
                 session.execute(delete(SectionsState).where(SectionsState.song_id == song_id))
+                # A row already removed by a concurrent sweep deletes zero rows: still success.
                 session.execute(delete(Song).where(Song.id == song_id))
                 session.commit()
                 report.deleted.append(song_id)
             except Exception:  # noqa: BLE001 - one poisoned song must not abort the sweep
                 session.rollback()
+                if _already_gone(session, ctx, song_id):
+                    report.deleted.append(song_id)
+                    continue
                 log.exception("expiry cleanup failed for song %s; will retry next sweep", song_id)
                 report.failed.append(song_id)
     return report
+
+
+def _already_gone(session, ctx: AppContext, song_id: str) -> bool:
+    """True when a concurrent sweep removed both the row and the files while we were failing."""
+    try:
+        return session.get(Song, song_id) is None and not ctx.storage.list_names(song_id)
+    except Exception:  # noqa: BLE001 - cannot tell; let the caller count it as failed
+        session.rollback()
+        return False
 
 
 def cleanup_expired(ctx: AppContext) -> list[str]:

@@ -55,7 +55,7 @@ class Job(Base):
         Uuid(as_uuid=False), ForeignKey("songs.id", ondelete="CASCADE"), index=True
     )
     kind: Mapped[str] = mapped_column(String(16))  # analyze | separate | stagepack
-    status: Mapped[str] = mapped_column(String(16))  # queued | running | finished | failed
+    status: Mapped[str] = mapped_column(String(16))  # api.queueing.JobState
     stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

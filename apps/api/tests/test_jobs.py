@@ -1,8 +1,12 @@
+import json
+
 import pytest
 from audio_core.models import Analysis
+from conftest import SECRET
 
 from api.models import Job, Pack
 from api.queueing import QueueUnavailable, RemoteJob, map_status
+from api.services import ENQUEUE_FAILED_ERROR
 
 
 def put_analysis_and_stems(store, song_id, duration=12.5):
@@ -256,47 +260,116 @@ def test_lost_job_is_failed_after_grace(client, queue, clock, settings, song):
     assert client.get(f"/jobs/{job_id}").json()["status"] == "failed"
 
 
-def test_expired_rq_entry_with_artifact_is_finished_not_lost(
+def write_marker(store, song_id, job_id, result):
+    """What the worker's ``tracked`` wrapper leaves behind for a successful job."""
+    store.put_bytes(song_id, f"jobs/{job_id}.json", json.dumps({"result": result}).encode())
+
+
+def test_expired_rq_entry_with_result_marker_is_finished_not_lost(
     client, queue, store, clock, settings, song
 ):
     job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
     store.put_bytes(song["id"], "analysis.json", b'{"duration": 12.5}')
+    write_marker(store, song["id"], job_id, {"bpm": 120.0})
     clock.advance(seconds=settings.lost_job_grace_seconds)
     body = client.get(f"/jobs/{job_id}").json()  # RQ forgot the job before anyone polled
 
     assert body["status"] == "finished"
     assert body["error"] is None
+    assert body["result"] == {"bpm": 120.0}
     assert body["finished_at"] is not None
     assert client.get(f"/songs/{song['id']}").json()["duration"] == 12.5
 
 
-def test_expired_rq_entry_separate_artifact_is_finished(
+def test_expired_rq_entry_with_marker_separate_is_finished(
     client, queue, store, clock, settings, song
 ):
     job_id = client.post(f"/songs/{song['id']}/separate").json()["job_id"]
-    store.put_bytes(song["id"], "stems/stemset.json", b"{}")
+    write_marker(store, song["id"], job_id, {"stems": ["drums"]})
     clock.advance(seconds=settings.lost_job_grace_seconds)
 
     assert client.get(f"/jobs/{job_id}").json()["status"] == "finished"
 
 
-def test_expired_rq_entry_stagepack_artifact_records_the_pack_name(
+def stagepack(client, sid, destination="daw"):
+    return client.post(f"/songs/{sid}/stagepack", json={"destination": destination}).json()[
+        "job_id"
+    ]
+
+
+def test_expired_rq_entry_stagepack_records_the_pack_named_by_its_marker(
     client, queue, store, clock, settings, song
 ):
     put_analysis_and_stems(store, song["id"])
-    job_id = client.post(f"/songs/{song['id']}/stagepack", json={"destination": "daw"}).json()[
-        "job_id"
-    ]
+    job_id = stagepack(client, song["id"])
     store.put_bytes(song["id"], "packs/Song One-daw.zip", b"zip")
+    write_marker(store, song["id"], job_id, "Song One-daw.zip")
     clock.advance(seconds=settings.lost_job_grace_seconds)
     body = client.get(f"/jobs/{job_id}").json()
 
     assert body["status"] == "finished"
+    assert body["result"] == {"filename": "Song One-daw.zip"}
     with client.app.state.ctx.session_factory() as session:
         assert session.query(Pack).one().filename == "Song One-daw.zip"
 
 
-def test_expired_rq_entry_without_artifact_is_still_lost(client, queue, clock, settings, song):
+def test_lost_stagepack_never_adopts_another_jobs_pack(client, queue, store, clock, settings, song):
+    """Two packs on the song: the lost job has no marker, so it must not claim either of them."""
+    put_analysis_and_stems(store, song["id"])
+    done = stagepack(client, song["id"])
+    lost = stagepack(client, song["id"], destination="playback")
+    store.put_bytes(song["id"], "packs/Pack A.zip", b"zip-a")
+    store.put_bytes(song["id"], "packs/Pack B.zip", b"zip-b")
+    write_marker(store, song["id"], done, "Pack B.zip")
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    assert client.get(f"/jobs/{lost}").json()["status"] == "failed"
+    ok = client.get(f"/jobs/{done}").json()
+    assert ok["status"] == "finished"
+    assert ok["result"] == {"filename": "Pack B.zip"}
+    with client.app.state.ctx.session_factory() as session:
+        names = {p.job_id: p.filename for p in session.query(Pack)}
+    assert names == {done: "Pack B.zip", lost: None}
+
+
+def test_rerun_whose_old_artifact_exists_is_not_mistaken_for_finished(
+    client, queue, store, clock, settings, song
+):
+    """The first analysis left analysis.json; a lost re-run has its own (absent) marker."""
+    first = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    store.put_bytes(song["id"], "analysis.json", b"{}")
+    write_marker(store, song["id"], first, {"bpm": 100})
+    rerun = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    assert client.get(f"/jobs/{rerun}").json()["status"] == "failed"
+    assert client.get(f"/jobs/{first}").json()["status"] == "finished"
+
+
+def test_unreadable_marker_counts_as_lost(client, queue, store, clock, settings, song):
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    store.put_bytes(song["id"], f"jobs/{job_id}.json", b"{not json")
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "failed"
+
+
+def test_storage_error_while_reading_the_marker_leaves_the_job_undecided(
+    client, queue, store, clock, settings, song, monkeypatch
+):
+    from api.storage import StorageError
+
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    def broken(*args, **kwargs):
+        raise StorageError("disk hiccup")
+
+    monkeypatch.setattr(type(store), "exists", broken)
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "queued"
+
+
+def test_expired_rq_entry_without_marker_is_still_lost(client, queue, clock, settings, song):
     job_id = client.post(f"/songs/{song['id']}/separate").json()["job_id"]
     clock.advance(seconds=settings.lost_job_grace_seconds)
 
@@ -305,10 +378,50 @@ def test_expired_rq_entry_without_artifact_is_still_lost(client, queue, clock, s
     assert "job lost" in body["error"]
 
 
-def test_rq_records_outlive_the_song_life():
-    from api.queueing import RESULT_TTL_SECONDS
+def test_rq_records_are_kept_for_twice_the_song_life_and_enqueue_uses_it(monkeypatch):
+    """The TTL handed to RQ is derived from the song TTL setting, not a separate constant."""
+    from rq import Queue
 
-    assert RESULT_TTL_SECONDS >= 24 * 3600
+    from api.config import Settings
+    from api.queueing import RqQueue
+
+    settings = Settings(signing_secret=SECRET, song_ttl_hours=5)
+    assert settings.result_ttl_seconds == 2 * 5 * 3600
+
+    seen = {}
+
+    def fake_enqueue(self, func, **kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr(Queue, "enqueue", fake_enqueue)
+    queue = RqQueue("redis://unused", settings.result_ttl_seconds)
+    queue._connection = object()
+    queue.enqueue("worker_cpu.jobs.analyze_job", ("s",), {}, job_id="j", timeout=10)
+
+    assert seen["result_ttl"] == seen["failure_ttl"] == 2 * 5 * 3600
+    assert seen["result_ttl"] > settings.song_ttl_hours * 3600  # outlives the song it belongs to
+
+
+def test_rq_queue_serializes_job_records_as_json(monkeypatch):
+    from rq import Queue
+    from rq.serializers import JSONSerializer
+
+    from api.queueing import RqQueue
+
+    seen = {}
+    original_init = Queue.__init__
+
+    def spy_init(self, *args, **kwargs):
+        seen["serializer"] = kwargs.get("serializer")
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(Queue, "__init__", spy_init)
+    monkeypatch.setattr(Queue, "enqueue", lambda self, func, **kw: None)
+    queue = RqQueue("redis://unused", 10)
+    queue._connection = object()
+    queue.enqueue("worker_cpu.jobs.analyze_job", ("s",), {}, job_id="j", timeout=10)
+
+    assert seen["serializer"] is JSONSerializer
 
 
 def test_running_job_the_queue_forgot_is_also_failed(client, queue, clock, settings, song):
@@ -374,8 +487,10 @@ def test_rq_queue_fetch_returns_aware_utc_datetimes(monkeypatch):
 
     from api.queueing import RqQueue
 
-    monkeypatch.setattr(Job, "fetch", staticmethod(lambda job_id, connection: StubRqJob()))
-    queue = RqQueue("redis://unused")
+    monkeypatch.setattr(
+        Job, "fetch", staticmethod(lambda job_id, connection, serializer=None: StubRqJob())
+    )
+    queue = RqQueue("redis://unused", 10)
     queue._connection = object()
     remote = queue.fetch("x")
 
@@ -393,8 +508,10 @@ def test_rq_queue_fetch_maps_the_real_jobstatus_enum(monkeypatch):
         def get_status(self, refresh=True):
             return JobStatus.FINISHED
 
-    monkeypatch.setattr(Job, "fetch", staticmethod(lambda job_id, connection: EnumStatusJob()))
-    queue = RqQueue("redis://unused")
+    monkeypatch.setattr(
+        Job, "fetch", staticmethod(lambda job_id, connection, serializer=None: EnumStatusJob())
+    )
+    queue = RqQueue("redis://unused", 10)
     queue._connection = object()
     remote = queue.fetch("x")
 
@@ -409,16 +526,16 @@ def test_rq_queue_fetch_distinguishes_missing_from_outage(monkeypatch):
 
     from api.queueing import RqQueue
 
-    queue = RqQueue("redis://unused")
+    queue = RqQueue("redis://unused", 10)
     queue._connection = object()
 
-    def missing(job_id, connection):
+    def missing(job_id, connection, serializer=None):
         raise NoSuchJobError(job_id)
 
     monkeypatch.setattr(Job, "fetch", staticmethod(missing))
     assert queue.fetch("x") is None
 
-    def down(job_id, connection):
+    def down(job_id, connection, serializer=None):
         raise RedisConnectionError("refused")
 
     monkeypatch.setattr(Job, "fetch", staticmethod(down))
@@ -460,7 +577,7 @@ def test_job_row_is_committed_before_enqueue(client, queue, song):
     assert seen["row"].status == "queued"
 
 
-def test_failed_enqueue_keeps_rows_as_failed_not_deleted(client, queue, store, song):
+def test_failed_enqueue_keeps_the_job_failed_and_drops_its_orphan_pack(client, queue, store, song):
     put_analysis_and_stems(store, song["id"])
     queue.fail_enqueue = QueueUnavailable("redis down")
     response = client.post(f"/songs/{song['id']}/stagepack", json={"destination": "daw"})
@@ -469,7 +586,8 @@ def test_failed_enqueue_keeps_rows_as_failed_not_deleted(client, queue, store, s
     with client.app.state.ctx.session_factory() as session:
         (job,) = session.query(Job).all()
         assert job.status == "failed"
-        assert session.query(Pack).count() == 1
+        assert job.error == ENQUEUE_FAILED_ERROR
+        assert session.query(Pack).count() == 0  # the pack of a failed job can never be filled
 
 
 def test_reanalysis_never_asks_the_worker_to_overwrite_edited_sections(client, queue, store, song):

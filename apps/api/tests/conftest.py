@@ -12,7 +12,7 @@ from api.main import create_app
 from api.queueing import RemoteJob
 
 API_ROOT = Path(__file__).resolve().parents[1]
-SECRET = "test-signing-secret-0123456789"
+SECRET = "test-signing-secret-0123456789-abcdefgh"
 
 
 def alembic_config(database_url: str) -> Config:

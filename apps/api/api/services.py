@@ -2,7 +2,9 @@
 
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any
 
 from fastapi import HTTPException
@@ -83,9 +85,10 @@ def create_job(
 
     The row is committed first so a fast worker (or a status poll) never sees an RQ job without
     its row. If enqueueing fails the 503 is returned, but Redis may have accepted the job before
-    the error surfaced (ambiguous outcome), so the rows are kept and the job is marked failed with
-    an explicit error rather than deleted: a worker that still runs it can then never produce an
-    untracked job, and the client simply retries to get a fresh job id.
+    the error surfaced (ambiguous outcome), so the job row is kept and marked failed with an
+    explicit error rather than deleted: a worker that still runs it can then never produce an
+    untracked job, and the client simply retries to get a fresh job id. The pack row of a failed
+    stagepack job is removed, since nothing can ever fill it in.
     """
     job_id = str(uuid.uuid4())
     now = ctx.now()
@@ -109,7 +112,10 @@ def create_job(
             row.status = FAILED
             row.error = ENQUEUE_FAILED_ERROR
             row.finished_at = ctx.now()
-            session.commit()
+        # The pack row only exists to receive the filename of its job; that job is now terminal
+        # and failed, so the row would stay empty forever. Drop it with the failure recorded.
+        session.query(Pack).filter(Pack.job_id == job_id).delete()
+        session.commit()
         raise HTTPException(503, "job queue unavailable") from None
     return job_id
 
@@ -153,52 +159,59 @@ def sync_job(session: Session, ctx: AppContext, job: Job) -> Job:
 LOST_JOB_ERROR = "job lost: the queue no longer knows it (expired or removed before finishing)"
 
 
-def _artifact_outcome(session: Session, ctx: AppContext, job: Job) -> dict | None | bool:
-    """Did the worker leave its output in storage? False when not; else the result to record.
+class Outcome(Enum):
+    """What storage says about a job the queue forgot."""
 
-    Terminal outcomes must not depend on RQ remembering the job. The worker writes its artifact
-    before the job finishes, so the artifact proves success. Limitation: a re-run of a kind whose
-    artifact already existed (analyze, separate) cannot be told apart from its earlier output.
+    FINISHED = "finished"  # the worker left its result marker for this very job
+    LOST = "lost"  # no marker: the job never completed, or was never run
+
+
+@dataclass(frozen=True)
+class ArtifactOutcome:
+    outcome: Outcome
+    result: Any = None  # the job's raw return value, only for FINISHED
+
+
+def _artifact_outcome(ctx: AppContext, job: Job) -> ArtifactOutcome:
+    """Read the result marker ``jobs/<job_id>.json`` the worker wrote for this exact job.
+
+    Terminal outcomes must not depend on RQ remembering the job. The worker writes the marker
+    after its artifacts and before the job returns, so a marker proves this job succeeded; it is
+    keyed by job id, so neither an older run's output nor another pack of the song can be mistaken
+    for it. A missing or unreadable marker means the job did not complete. Raises
+    ``StorageError`` when storage itself cannot answer.
     """
-    store = ctx.storage
-    if job.kind == "analyze":
-        return None if store.exists(job.song_id, names.ANALYSIS) else False
-    if job.kind == "separate":
-        return None if store.exists(job.song_id, names.STEMSET) else False
-    if job.kind == "stagepack":
-        claimed = {
-            p.filename
-            for p in session.query(Pack).filter(Pack.song_id == job.song_id)
-            if p.filename and p.job_id != job.id
-        }
-        for name in store.list_names(job.song_id, names.PACKS_PREFIX):
-            filename = name.split("/", 1)[1]
-            if name.endswith(".zip") and filename not in claimed:
-                return {"filename": filename}
-        return False
-    return False
+    name = names.job_result_name(job.id)
+    if not ctx.storage.exists(job.song_id, name):
+        return ArtifactOutcome(Outcome.LOST)
+    try:
+        return ArtifactOutcome(
+            Outcome.FINISHED, json.loads(ctx.storage.get_bytes(job.song_id, name))["result"]
+        )
+    except (ValueError, KeyError, TypeError):
+        return ArtifactOutcome(Outcome.LOST)  # a marker that does not parse proves nothing
 
 
 def _fail_if_lost(session: Session, ctx: AppContext, job: Job, now: datetime) -> Job:
     """Settle a non-terminal row the queue forgot, once the grace period has passed.
 
     The grace covers the short window between committing the row and the enqueue landing. A
-    missing RQ entry whose artifact is in storage means the job finished and RQ's result expired
-    before anyone polled: it is recorded as finished. Only absent artifacts mean it is lost.
+    missing RQ entry whose result marker is in storage means the job finished and RQ's record
+    expired before anyone polled: it is recorded as finished. Without a marker it is lost.
     """
     if now - job.created_at < timedelta(seconds=ctx.settings.lost_job_grace_seconds):
         return job
     try:
-        outcome = _artifact_outcome(session, ctx, job)
+        found = _artifact_outcome(ctx, job)
     except names.StorageError:
         return job  # storage hiccup says nothing about the job; decide on a later poll
     job.finished_at = now
-    if outcome is False:
+    if found.outcome is Outcome.LOST:
         job.status = FAILED
         job.error = LOST_JOB_ERROR
     else:
         job.status = FINISHED
-        job.result = outcome
+        job.result = _normalize_result(job.kind, found.result)
         _apply_finished(session, ctx, job)
     session.commit()
     return job

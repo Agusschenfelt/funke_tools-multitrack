@@ -20,10 +20,16 @@ SECTIONS = "sections.json"
 STEMSET = "stems/stemset.json"
 STEMS_PREFIX = "stems/"
 PACKS_PREFIX = "packs/"
+JOBS_PREFIX = "jobs/"
 INCOMING_DIR = ".incoming"  # not a valid song id, so the worker's list_songs ignores it
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SAFE_PART = re.compile(r"^[^/\\\x00]+$")
+
+
+def job_result_name(job_id: str) -> str:
+    """Where the worker records what a finished job returned (``worker_cpu.jobs.tracked``)."""
+    return f"{JOBS_PREFIX}{job_id}.json"
 
 
 class StorageError(RuntimeError):

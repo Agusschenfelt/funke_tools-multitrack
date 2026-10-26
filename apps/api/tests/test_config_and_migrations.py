@@ -4,7 +4,7 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from conftest import alembic_config
+from conftest import SECRET, alembic_config
 from sqlalchemy import create_engine
 
 from api.config import ConfigError, Settings, normalize_database_url
@@ -21,7 +21,7 @@ def test_signing_secret_is_required():
 def test_settings_from_env():
     settings = Settings.from_env(
         {
-            "SIGNING_SECRET": "s",
+            "SIGNING_SECRET": SECRET,
             "DATABASE_URL": "postgresql://u:p@db/x",
             "REDIS_URL": "redis://r:6379/1",
             "STORAGE_ROOT": "/data",
@@ -39,7 +39,7 @@ def test_settings_from_env():
 
 
 def test_settings_defaults():
-    settings = Settings.from_env({"SIGNING_SECRET": "s"})
+    settings = Settings.from_env({"SIGNING_SECRET": SECRET})
     assert settings.max_upload_mb == 100
     assert ".wav" in settings.allowed_extensions
     assert settings.cors_origins == ()
@@ -47,9 +47,9 @@ def test_settings_defaults():
 
 def test_invalid_numbers_are_rejected():
     with pytest.raises(ConfigError):
-        Settings.from_env({"SIGNING_SECRET": "s", "MAX_UPLOAD_MB": "abc"})
+        Settings.from_env({"SIGNING_SECRET": SECRET, "MAX_UPLOAD_MB": "abc"})
     with pytest.raises(ConfigError):
-        Settings.from_env({"SIGNING_SECRET": "s", "MAX_UPLOAD_MB": "0"})
+        Settings.from_env({"SIGNING_SECRET": SECRET, "MAX_UPLOAD_MB": "0"})
 
 
 def test_normalize_database_url():

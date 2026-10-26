@@ -6,21 +6,38 @@ worker code. ``JobQueue`` is the seam tests replace with an in-memory double.
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, Protocol
 
+from rq.serializers import JSONSerializer
+
 QUEUE_NAME = "cpu"
-# RQ keeps finished/failed job records this long. Twice the 24 h song life, so a record outlives
-# the song it belongs to even for jobs that finish late in its life; the API also falls back to
-# storage artifacts when a record is gone (services._fail_if_lost).
-RESULT_TTL_SECONDS = 48 * 3600
+# Job records are JSON on both sides (never pickle): see ``worker_cpu.security``.
+SERIALIZER = JSONSerializer
 
 ANALYZE_FUNC = "worker_cpu.jobs.analyze_job"
 SEPARATE_FUNC = "worker_cpu.jobs.separate_job"
 STAGEPACK_FUNC = "worker_cpu.jobs.stagepack_job"
 
-# Public job statuses and the RQ statuses that map onto them.
-QUEUED, RUNNING, FINISHED, FAILED = "queued", "running", "finished", "failed"
+
+class JobState(StrEnum):
+    """The public job statuses; the single source for the DB column, the API schema and checks."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    FINISHED = "finished"
+    FAILED = "failed"
+
+
+QUEUED, RUNNING, FINISHED, FAILED = (
+    JobState.QUEUED,
+    JobState.RUNNING,
+    JobState.FINISHED,
+    JobState.FAILED,
+)
 TERMINAL = frozenset({FINISHED, FAILED})
+ACTIVE = (QUEUED, RUNNING)
+# The RQ statuses that map onto them.
 _RQ_STATUS = {
     "queued": QUEUED,
     "deferred": QUEUED,
@@ -33,7 +50,7 @@ _RQ_STATUS = {
 }
 
 
-def map_status(rq_status: str | None) -> str:
+def map_status(rq_status: str | None) -> JobState:
     """Map an RQ status to queued | running | finished | failed (unknown counts as queued)."""
     return _RQ_STATUS.get(rq_status or "", QUEUED)
 
@@ -85,8 +102,10 @@ def _last_line(text: str | None) -> str | None:
 class RqQueue:
     """RQ-backed queue on the ``cpu`` queue. Redis is contacted lazily."""
 
-    def __init__(self, redis_url: str, name: str = QUEUE_NAME) -> None:
+    def __init__(self, redis_url: str, result_ttl: int, name: str = QUEUE_NAME) -> None:
+        """``result_ttl``: seconds RQ keeps job records (``Settings.result_ttl_seconds``)."""
         self.redis_url = redis_url
+        self.result_ttl = result_ttl
         self.name = name
         self._connection = None
 
@@ -102,14 +121,14 @@ class RqQueue:
         from rq import Queue
 
         try:
-            Queue(self.name, connection=self._conn()).enqueue(
+            Queue(self.name, connection=self._conn(), serializer=SERIALIZER).enqueue(
                 func,
                 args=args,
                 kwargs=kwargs,
                 job_id=job_id,
                 job_timeout=timeout,
-                result_ttl=RESULT_TTL_SECONDS,
-                failure_ttl=RESULT_TTL_SECONDS,
+                result_ttl=self.result_ttl,
+                failure_ttl=self.result_ttl,
             )
         except RedisError as exc:
             raise QueueUnavailable(str(exc)) from exc
@@ -120,7 +139,7 @@ class RqQueue:
         from rq.job import Job
 
         try:
-            job = Job.fetch(job_id, connection=self._conn())
+            job = Job.fetch(job_id, connection=self._conn(), serializer=SERIALIZER)
             status = job.get_status(refresh=True)
             return RemoteJob(
                 # RQ returns a JobStatus enum whose str() is "JobStatus.FINISHED"; use its value.

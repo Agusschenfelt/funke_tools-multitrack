@@ -6,6 +6,8 @@ from typing import Any, Literal
 from audio_core.models import Section
 from pydantic import BaseModel, Field
 
+from api.queueing import JobState
+
 SEPARATION_MODELS = ("htdemucs_6s", "htdemucs_ft")
 
 
@@ -56,7 +58,7 @@ class JobOut(BaseModel):
     job_id: str
     song_id: str
     kind: str
-    status: Literal["queued", "running", "finished", "failed"]
+    status: JobState
     stage: str | None
     error: str | None
     created_at: datetime

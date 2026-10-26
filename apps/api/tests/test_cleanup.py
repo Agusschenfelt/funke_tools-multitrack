@@ -221,7 +221,7 @@ def test_cleanup_loop_sweeps_then_sleeps_and_survives_errors(client, store, cloc
 
 def test_lifespan_runs_cleanup_task_only_when_enabled(settings, queue, clock):
     from alembic import command
-    from conftest import alembic_config
+    from conftest import SECRET, alembic_config
 
     command.upgrade(alembic_config(settings.database_url), "head")
     with TestClient(create_app(settings, queue=queue, clock=clock)) as disabled:
@@ -241,14 +241,14 @@ def test_lifespan_runs_cleanup_task_only_when_enabled(settings, queue, clock):
 
 
 def test_cleanup_interval_setting():
-    assert Settings.from_env({"SIGNING_SECRET": "s"}).cleanup_interval_seconds == 900
-    off = Settings.from_env({"SIGNING_SECRET": "s", "CLEANUP_INTERVAL_SECONDS": "0"})
+    assert Settings.from_env({"SIGNING_SECRET": SECRET}).cleanup_interval_seconds == 900
+    off = Settings.from_env({"SIGNING_SECRET": SECRET, "CLEANUP_INTERVAL_SECONDS": "0"})
     assert off.cleanup_interval_seconds == 0
     assert Settings(signing_secret="s").cleanup_interval_seconds == 0
     with pytest.raises(ConfigError):
-        Settings.from_env({"SIGNING_SECRET": "s", "CLEANUP_INTERVAL_SECONDS": "-1"})
+        Settings.from_env({"SIGNING_SECRET": SECRET, "CLEANUP_INTERVAL_SECONDS": "-1"})
     with pytest.raises(ConfigError):
-        Settings.from_env({"SIGNING_SECRET": "s", "CLEANUP_INTERVAL_SECONDS": "soon"})
+        Settings.from_env({"SIGNING_SECRET": SECRET, "CLEANUP_INTERVAL_SECONDS": "soon"})
 
 
 def test_cli_main_cleans_with_env_settings(client, store, clock, settings, monkeypatch, capsys):
@@ -267,3 +267,74 @@ def test_cli_main_cleans_with_env_settings(client, store, clock, settings, monke
     assert "deleted 1 expired song(s)" in out
     assert song["id"] in out
     assert count(client, Song) == 0
+
+
+def remove_everywhere(ctx, store, song_id: str) -> None:
+    """What a concurrent sweep does: rows and files of one song, in its own session."""
+    store.delete_song(song_id)
+    with ctx.session_factory() as other:
+        other.query(Job).filter(Job.song_id == song_id).delete()
+        other.query(SectionsState).filter(SectionsState.song_id == song_id).delete()
+        other.query(Song).filter(Song.id == song_id).delete()
+        other.commit()
+
+
+def test_song_deleted_by_a_concurrent_sweep_before_its_turn_does_not_abort(client, store, clock):
+    ctx = client.app.state.ctx
+    ids = [upload(client, bytes([i]) * 8, f"{i}.wav").json()["id"] for i in range(3)]
+    clock.advance(hours=25)
+    victim = sorted(ids)[1]  # the sweep reaches ids in query order; remove one mid-sweep
+
+    class Racing:
+        def __init__(self, inner) -> None:
+            self.inner = inner
+            self.raced = False
+
+        def delete_song(self, song_id: str) -> None:
+            if not self.raced:
+                self.raced = True
+                remove_everywhere(ctx, self.inner, victim)
+            self.inner.delete_song(song_id)
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    ctx.storage = Racing(store)
+    report = sweep_expired(ctx)
+
+    assert report.failed == []
+    assert set(report.deleted) >= set(ids) - {victim}
+    assert set(report.deleted) <= set(ids)
+    assert count(client, Song) == 0
+
+
+def test_storage_removed_by_a_concurrent_sweep_counts_as_deleted(client, store, clock):
+    ctx = client.app.state.ctx
+    song_id = upload(client, b"gone", "g.wav").json()["id"]
+    clock.advance(hours=25)
+
+    class VanishingStorage:
+        def __init__(self, inner) -> None:
+            self.inner = inner
+
+        def delete_song(self, sid: str) -> None:
+            remove_everywhere(ctx, self.inner, sid)  # the other sweep wins the race...
+            raise FileNotFoundError(sid)  # ...and our own removal finds nothing
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    ctx.storage = VanishingStorage(store)
+    report = sweep_expired(ctx)
+
+    assert report.deleted == [song_id]
+    assert report.failed == []
+
+
+def test_a_genuine_failure_with_data_still_present_stays_failed(client, store, clock):
+    ctx = client.app.state.ctx
+    song_id = upload(client, b"keep", "k.wav").json()["id"]
+    clock.advance(hours=25)
+    ctx.storage = FlakyStorage(store, {song_id})
+
+    assert sweep_expired(ctx).failed == [song_id]

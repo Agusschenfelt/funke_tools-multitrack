@@ -34,7 +34,7 @@ def build_context(
         settings=settings,
         session_factory=make_session_factory(engine),
         storage=LocalStorage(settings.storage_root),
-        queue=queue or RqQueue(settings.redis_url),
+        queue=queue or RqQueue(settings.redis_url, settings.result_ttl_seconds),
         clock=clock or utc_now,
     )
 
