@@ -17,6 +17,8 @@ import tempfile
 import time
 import uuid
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from urllib import error, parse, request
 
@@ -149,46 +151,34 @@ def wait_job(client: Client, job_id: str, timeout: float, poll: float) -> dict:
         time.sleep(poll)
 
 
+@contextmanager
+def step(name: str, results: list[tuple[str, float, str]]) -> Iterator[None]:
+    """Run the body as one named step: print it, time it and record ok/FAIL in ``results``."""
+    console.print(f"[bold]{name}[/bold]")
+    start = time.monotonic()
+    try:
+        yield
+    except (SmokeError, AssertionError, OSError, zipfile.BadZipFile, KeyError) as exc:
+        results.append((name, time.monotonic() - start, "FAIL"))
+        detail = str(exc) if isinstance(exc, SmokeError) else repr(exc)
+        raise SmokeError(f"{name}: {detail}") from exc
+    elapsed = time.monotonic() - start
+    results.append((name, elapsed, "ok"))
+    console.print(f"  ok in {elapsed:.1f}s")
+
+
 def run(args: argparse.Namespace, results: list[tuple[str, float, str]]) -> None:
     client = Client(args.api)
     workdir = Path(tempfile.mkdtemp(prefix="e2e-smoke-"))
     state: dict = {}
 
-    def step(name):
-        def decorator(fn):
-            console.print(f"[bold]{name}[/bold]")
-            start = time.monotonic()
-            try:
-                fn()
-            except (
-                SmokeError,
-                AssertionError,
-                OSError,
-                zipfile.BadZipFile,
-                KeyError,
-            ) as exc:
-                results.append((name, time.monotonic() - start, "FAIL"))
-                raise SmokeError(
-                    f"{name}: {exc!r}"
-                    if not isinstance(exc, SmokeError)
-                    else f"{name}: {exc}"
-                )
-            elapsed = time.monotonic() - start
-            results.append((name, elapsed, "ok"))
-            console.print(f"  ok in {elapsed:.1f}s")
-            return fn
-
-        return decorator
-
-    @step("1. generate synthetic song")
-    def _():
+    with step("1. generate synthetic song", results):
         audio = make_song(time.time_ns() % 2**32)
         state["wav"] = workdir / "smoke_song.wav"
         sf.write(state["wav"], audio, SAMPLE_RATE, subtype="PCM_16")
         console.print(f"    {len(audio) / SAMPLE_RATE:.1f}s -> {state['wav']}")
 
-    @step("2. upload and reuse")
-    def _():
+    with step("2. upload and reuse", results):
         _, song = client.upload(state["wav"])
         assert not song["reused"], "first upload reported reused"
         state["song"] = song["id"]
@@ -200,8 +190,7 @@ def run(args: argparse.Namespace, results: list[tuple[str, float, str]]) -> None
 
     sid = lambda: state["song"]
 
-    @step("3. analyze with sections")
-    def _():
+    with step("3. analyze with sections", results):
         job = client.json(
             "POST", f"/songs/{sid()}/analyze", 202, json_body={"sections": True}
         )
@@ -215,8 +204,7 @@ def run(args: argparse.Namespace, results: list[tuple[str, float, str]]) -> None
         assert not sections["edited"], "sections flagged edited before any edit"
         state["sections"] = sections
 
-    @step("4. edit sections")
-    def _():
+    with step("4. edit sections", results):
         original = state["sections"]
         body = {
             "source": original["source"],
@@ -231,15 +219,13 @@ def run(args: argparse.Namespace, results: list[tuple[str, float, str]]) -> None
         assert got["edited"], "edited flag not set"
         assert got["sections"][-1]["label"] == EDITED_LABEL, "edited label not returned"
 
-    @step("5. separate stems (htdemucs_6s)")
-    def _():
+    with step("5. separate stems (htdemucs_6s)", results):
         job = client.json(
             "POST", f"/songs/{sid()}/separate", 202, json_body={"model": "htdemucs_6s"}
         )
         wait_job(client, job["job_id"], args.separate_timeout, args.poll)
 
-    @step("6. stage pack and ZIP checks")
-    def _():
+    with step("6. stage pack and ZIP checks", results):
         options = {"destination": "daw", "count_in_bars": 2, "sample_rate": 48000}
         job = client.json("POST", f"/songs/{sid()}/stagepack", 202, json_body=options)
         done = wait_job(client, job["job_id"], args.timeout, args.poll)
@@ -267,8 +253,7 @@ def run(args: argparse.Namespace, results: list[tuple[str, float, str]]) -> None
             assert EDITED_LABEL in sections_txt, "Secciones.txt lacks the edited label"
         state["download_url"] = url
 
-    @step("7. negative checks")
-    def _():
+    with step("7. negative checks", results):
         token = parse.urlsplit(state["download_url"]).path.rsplit("/", 1)[-1]
         tampered = token[:-2] + ("AA" if not token.endswith("AA") else "BB")
         status, _ = client.call("GET", f"/files/{tampered}")
