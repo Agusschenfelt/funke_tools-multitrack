@@ -7,21 +7,15 @@ name = "audio-core"
 version = "0.1.0"
 description = "Audio pipelines and CLI for the multitrack and stems tool."
 requires-python = ">=3.11,<3.12"
+# Light core: data models, I/O, timeline, click, guide and Stage Pack build. The API installs only
+# this set, so it never pulls torch, demucs or numba. Heavy dependencies live in extras below.
 dependencies = [
     "numpy<2",  # cap: torch 2.2.x is built against the NumPy 1 ABI
     "soundfile",
     "typer",
     "pydantic>=2",
     "rich",
-    "torch>=2,<2.3",  # cap: PyTorch publishes no Intel macOS wheels after 2.2.2
-    "torchaudio<2.3",  # cap: must match the torch 2.2.x line (same Intel macOS wheel limit)
-    "beat-this>=1.1.0",
-    "librosa>=0.11.0",
-    "pyloudnorm>=0.2.0",
     "scipy>=1.17.1",
-    "numba<0.62",  # cap: no wheel for this Intel Mac in newer releases
-    "llvmlite<0.45",  # cap: numba 0.61 requires llvmlite 0.44.x; newer has no wheel here
-    "demucs>=4.1.0",
     "soxr>=1.1.0",
     "mido>=1.3.3",
 ]
@@ -30,14 +24,30 @@ dependencies = [
 audio-core = "audio_core.cli:app"
 
 [project.optional-dependencies]
+# ml: model inference (beat tracking and stem separation). Needed by the CPU worker only.
+ml = [
+    "torch>=2,<2.3",  # cap: PyTorch publishes no Intel macOS wheels after 2.2.2
+    "torchaudio<2.3",  # cap: must match the torch 2.2.x line (same Intel macOS wheel limit)
+    "beat-this>=1.1.0",
+    "demucs>=4.1.0",
+]
+# analysis: signal analysis (key, loudness, section features). Needed by the CPU worker only.
+analysis = [
+    "librosa>=0.11.0",
+    "pyloudnorm>=0.2.0",
+    "numba<0.62",  # cap: no wheel for this Intel Mac in newer releases
+    "llvmlite<0.45",  # cap: numba 0.61 requires llvmlite 0.44.x; newer has no wheel here
+]
 essentia = [
     "essentia>=2.1b6.dev1389",
 ]
 
 [dependency-groups]
+# `uv sync` installs the dev group by default, so local development and tests get every extra.
 dev = [
     "pytest",
     "ruff",
+    "audio-core[ml,analysis]",
 ]
 
 [build-system]

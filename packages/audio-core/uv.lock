@@ -42,59 +42,65 @@ name = "audio-core"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "beat-this" },
-    { name = "demucs" },
-    { name = "librosa" },
-    { name = "llvmlite" },
     { name = "mido" },
-    { name = "numba" },
     { name = "numpy" },
     { name = "pydantic" },
-    { name = "pyloudnorm" },
     { name = "rich" },
     { name = "scipy" },
     { name = "soundfile" },
     { name = "soxr" },
-    { name = "torch" },
-    { name = "torchaudio" },
     { name = "typer" },
 ]
 
 [package.optional-dependencies]
+analysis = [
+    { name = "librosa" },
+    { name = "llvmlite" },
+    { name = "numba" },
+    { name = "pyloudnorm" },
+]
 essentia = [
     { name = "essentia" },
+]
+ml = [
+    { name = "beat-this" },
+    { name = "demucs" },
+    { name = "torch" },
+    { name = "torchaudio" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "audio-core", extra = ["analysis", "ml"] },
     { name = "pytest" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "beat-this", specifier = ">=1.1.0" },
-    { name = "demucs", specifier = ">=4.1.0" },
+    { name = "beat-this", marker = "extra == 'ml'", specifier = ">=1.1.0" },
+    { name = "demucs", marker = "extra == 'ml'", specifier = ">=4.1.0" },
     { name = "essentia", marker = "extra == 'essentia'", specifier = ">=2.1b6.dev1389" },
-    { name = "librosa", specifier = ">=0.11.0" },
-    { name = "llvmlite", specifier = "<0.45" },
+    { name = "librosa", marker = "extra == 'analysis'", specifier = ">=0.11.0" },
+    { name = "llvmlite", marker = "extra == 'analysis'", specifier = "<0.45" },
     { name = "mido", specifier = ">=1.3.3" },
-    { name = "numba", specifier = "<0.62" },
+    { name = "numba", marker = "extra == 'analysis'", specifier = "<0.62" },
     { name = "numpy", specifier = "<2" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pyloudnorm", specifier = ">=0.2.0" },
+    { name = "pyloudnorm", marker = "extra == 'analysis'", specifier = ">=0.2.0" },
     { name = "rich" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "soundfile" },
     { name = "soxr", specifier = ">=1.1.0" },
-    { name = "torch", specifier = ">=2,<2.3" },
-    { name = "torchaudio", specifier = "<2.3" },
+    { name = "torch", marker = "extra == 'ml'", specifier = ">=2,<2.3" },
+    { name = "torchaudio", marker = "extra == 'ml'", specifier = "<2.3" },
     { name = "typer" },
 ]
-provides-extras = ["essentia"]
+provides-extras = ["ml", "analysis", "essentia"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "audio-core", extras = ["ml", "analysis"] },
     { name = "pytest" },
     { name = "ruff" },
 ]

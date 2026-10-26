@@ -61,6 +61,7 @@ import soundfile as sf
 
 from audio_core.analysis import _package_version, to_mono
 from audio_core.constants import SAMPLE_RATE
+from audio_core.extras import require
 from audio_core.models import Grid, ModelVersion, Section, SectionName, Sections, StemSet
 
 HEURISTICS_VERSION = "1"
@@ -214,7 +215,7 @@ def extract_bar_features(
     audio: np.ndarray, grid: Grid, *, vocals: np.ndarray | None = None
 ) -> BarFeatures:
     """Chroma, timbre and loudness per bar, plus vocal loudness per bar when a stem is given."""
-    import librosa
+    librosa = require("librosa")
 
     mono = to_mono(audio) if audio.ndim == 2 else audio.astype(np.float32, copy=False)
     duration = mono.size / SAMPLE_RATE
@@ -259,7 +260,7 @@ def feature_matrix(features: BarFeatures) -> np.ndarray:
 
 def bar_affinity(x: np.ndarray) -> np.ndarray:
     """Mix of the path-enhanced recurrence affinity and a sequential path term, (bars, bars)."""
-    import librosa
+    librosa = require("librosa")
     from scipy.signal import convolve2d
 
     n = x.shape[1]

@@ -10,6 +10,7 @@ from rich.console import Console
 
 from audio_core.analysis import AnalysisError, AnalyzeOptions
 from audio_core.analysis import analyze as run_analyze
+from audio_core.extras import MissingExtraError
 from audio_core.guide import CueLibraryError
 from audio_core.io import DecodeError, decode
 from audio_core.models import Analysis, Grid, Sections, StagePackOptions, StemSet
@@ -43,6 +44,7 @@ def _run_or_exit(step: Callable[[], T], name: str) -> T:
         StagePackError,
         CueLibraryError,
         SectionsError,
+        MissingExtraError,
     ) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
