@@ -5,11 +5,24 @@ make the worker import and call any function in its environment. Two defenses, b
 entry point (``__main__``) and by the API's queue:
 
 * ``JSON_SERIALIZER``: job records are JSON, never pickle, so a forged record cannot smuggle in
-  code through deserialization.
-* ``AllowlistJob``: the worker resolves a job's function only if it is one of ``ALLOWED_JOBS``;
-  anything else fails the job before any import happens.
+  code through deserialization. The API's queue (``api.queueing``) must use the same serializer,
+  or the worker could not read its jobs; that is the API's only part in this.
+* ``AllowlistJob``: the worker resolves a job's function only if it is one of ``ALLOWED_JOBS``,
+  and never resolves a callback. Anything else fails the job before any import happens. This
+  runs in the worker alone: the API cannot enforce it against someone who writes to Redis.
 
 Redis itself also requires a password (see ``infra/``); these two checks are defense in depth.
+
+Every place RQ 2.12 imports a callable named by a job record, and what is done about it:
+
+* ``Job.func`` (``func_name``, or ``getattr(instance, func_name)``): checked against the allowlist.
+* ``Job.success_callback`` / ``failure_callback`` / ``stopped_callback``: each does
+  ``import_attribute(<x>_callback_name)`` lazily; the worker reads them after a job succeeds,
+  fails or is stopped. Blocked below: ``func`` refuses a record that sets any of them, and the
+  three properties never import (they return ``None``).
+
+Not record-controlled: dependencies (``dependency_ids`` are job ids, not dotted paths), the job
+and queue classes and the serializer (chosen by the worker's own configuration).
 """
 
 from rq.job import Job
@@ -31,11 +44,34 @@ class DisallowedJobError(RuntimeError):
 
 
 class AllowlistJob(Job):
-    """An RQ job that only resolves functions in ``ALLOWED_JOBS``."""
+    """An RQ job that only resolves functions in ``ALLOWED_JOBS`` and never resolves callbacks."""
 
     @property
     def func(self):
         name = self.func_name
-        if name is not None and (self.instance is not None or name not in ALLOWED_JOBS):
+        # A missing name is rejected too: the base class would return None and skip resolution.
+        if name is None or name not in ALLOWED_JOBS:
             raise DisallowedJobError(f"function not allowed on this worker: {name!r}")
+        # ``instance`` makes RQ call ``getattr(instance, name)`` instead of importing ``name``, so
+        # an allowlisted name could be redirected to an arbitrary bound method. Our own jobs are
+        # plain module functions and never carry an instance.
+        if self.instance is not None:
+            raise DisallowedJobError(f"job carries an instance, not allowed: {name!r}")
+        for field in ("success", "failure", "stopped"):
+            if getattr(self, f"_{field}_callback_name"):
+                raise DisallowedJobError(f"{field} callbacks are not allowed on this worker")
         return super().func
+
+    # Backstop for code paths that read a callback without going through ``func`` (for example
+    # failure handling): never import a name taken from a job record.
+    @property
+    def success_callback(self):
+        return None
+
+    @property
+    def failure_callback(self):
+        return None
+
+    @property
+    def stopped_callback(self):
+        return None

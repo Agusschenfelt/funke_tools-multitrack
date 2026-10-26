@@ -121,7 +121,7 @@ def test_jobs_run_through_an_rq_queue(
 def test_failed_job_is_recorded_by_the_queue(storage_root: Path, fake_models: None, queue) -> None:
     job = queue.enqueue(jobs.analyze_job, "ghost")
     assert job.get_status() == JobStatus.FAILED
-    assert "no source audio" in job.latest_result().exc_string
+    assert "song expired or deleted" in job.latest_result().exc_string
 
 
 def test_source_selection_ignores_lookalikes(
@@ -224,6 +224,7 @@ def test_tracked_job_holds_a_lock_while_running_and_leaves_a_result_marker(
     storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-1"))
+    storage.put_bytes("s1", "source.wav", b"x")
     seen = {}
 
     @jobs.tracked
@@ -242,6 +243,7 @@ def test_failed_job_releases_its_lock_and_writes_no_result(
     storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-2"))
+    storage.put_bytes("s1", "source.wav", b"x")
 
     @jobs.tracked
     def work(song_id: str) -> None:
@@ -252,10 +254,27 @@ def test_failed_job_releases_its_lock_and_writes_no_result(
     assert storage.list_names("s1", "jobs/") == []
 
 
+def test_job_for_a_song_the_sweep_deleted_fails_and_recreates_nothing(
+    storage: LocalStorage, storage_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-gone"))
+    ran = []
+
+    @jobs.tracked
+    def work(song_id: str) -> None:
+        ran.append(song_id)
+
+    with pytest.raises(jobs.JobError, match="song expired or deleted"):
+        work("gone")
+    assert ran == []
+    assert not (storage_root / "gone").exists()
+
+
 def test_string_results_are_recorded_verbatim(
     storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-3"))
+    storage.put_bytes("s1", "source.wav", b"x")
     jobs.tracked(lambda song_id: "Pack A.zip")("s1")
     assert json.loads(storage.get_bytes("s1", "jobs/job-3.json")) == {"result": "Pack A.zip"}
 

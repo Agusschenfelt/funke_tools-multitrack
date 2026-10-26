@@ -34,6 +34,17 @@ PACKS_PREFIX = "packs/"
 JOBS_PREFIX = "jobs/"
 LOCK_SUFFIX = ".lock"
 
+
+def lock_name(job_id: str) -> str:
+    """Marker present while a job runs."""
+    return f"{JOBS_PREFIX}{job_id}{LOCK_SUFFIX}"
+
+
+def result_marker_name(job_id: str) -> str:
+    """Marker holding a finished job's return value (the API reads it; see ``api.storage``)."""
+    return f"{JOBS_PREFIX}{job_id}.json"
+
+
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SAFE_PART = re.compile(r"^[^/\\\x00]+$")
 

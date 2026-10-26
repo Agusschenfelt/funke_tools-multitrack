@@ -39,8 +39,6 @@ from rq import get_current_job
 from worker_cpu.config import cues_dir, get_storage
 from worker_cpu.storage import (
     ANALYSIS,
-    JOBS_PREFIX,
-    LOCK_SUFFIX,
     PACKS_PREFIX,
     SECTIONS,
     SECTIONS_DETECTED,
@@ -49,6 +47,8 @@ from worker_cpu.storage import (
     STEMSET,
     Storage,
     StorageError,
+    lock_name,
+    result_marker_name,
 )
 
 
@@ -78,12 +78,16 @@ def tracked(func: Callable[..., Any]) -> Callable[..., Any]:
         if not job_id:
             return func(song_id, *args, **kwargs)
         storage = get_storage()
-        lock = f"{JOBS_PREFIX}{job_id}{LOCK_SUFFIX}"
+        # A sweep may have deleted the song while this job waited in the queue. Writing the lock
+        # would recreate its directory, so check first and write nothing.
+        if not storage.list_names(song_id, SOURCE_PREFIX + "."):
+            raise JobError("song expired or deleted")
+        lock = lock_name(job_id)
         storage.put_bytes(song_id, lock, b"")
         try:
             result = func(song_id, *args, **kwargs)
             storage.put_bytes(
-                song_id, f"{JOBS_PREFIX}{job_id}.json", json.dumps({"result": result}).encode()
+                song_id, result_marker_name(job_id), json.dumps({"result": result}).encode()
             )
             return result
         finally:
