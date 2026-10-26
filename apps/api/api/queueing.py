@@ -12,7 +12,8 @@ from typing import Any, Protocol
 from rq.serializers import JSONSerializer
 
 QUEUE_NAME = "cpu"
-# Job records are JSON on both sides (never pickle): see ``worker_cpu.security``.
+# Job records are JSON on both sides (never pickle): see ``worker_cpu.security``. Changing the
+# serializer makes records already in Redis unreadable: drain the queue before deploying it.
 SERIALIZER = JSONSerializer
 
 ANALYZE_FUNC = "worker_cpu.jobs.analyze_job"

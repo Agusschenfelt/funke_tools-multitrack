@@ -7,7 +7,7 @@ from alembic.migration import MigrationContext
 from conftest import SECRET, alembic_config
 from sqlalchemy import create_engine
 
-from api.config import ConfigError, Settings, normalize_database_url
+from api.config import ConfigError, Settings, check_signing_secret, normalize_database_url
 from api.models import Base
 
 
@@ -16,6 +16,34 @@ def test_signing_secret_is_required():
         Settings.from_env({})
     with pytest.raises(ConfigError):
         Settings.from_env({"SIGNING_SECRET": ""})
+
+
+@pytest.mark.parametrize(
+    "secret",
+    ["short", "x" * 31, "changeme" + "0" * 40, "Change-Me-" + "0" * 40, "replace-this-" + "0" * 30],
+)
+def test_weak_or_placeholder_signing_secret_is_refused_with_a_fix(secret):
+    with pytest.raises(ConfigError, match=r"openssl rand -hex 32"):
+        Settings.from_env({"SIGNING_SECRET": secret})
+
+
+def test_a_random_secret_of_minimum_length_is_accepted():
+    check_signing_secret("a" * 32, {})
+    assert Settings.from_env({"SIGNING_SECRET": "a" * 32}).signing_secret == "a" * 32
+
+
+@pytest.mark.parametrize("secret", ["short", "changeme"])
+def test_insecure_secret_escape_hatch_allows_weak_values_only_when_set_to_1(secret):
+    env = {"SIGNING_SECRET": secret, "ALLOW_INSECURE_SIGNING_SECRET": "1"}
+    assert Settings.from_env(env).signing_secret == secret
+    for off in ("0", "", "true"):
+        with pytest.raises(ConfigError):
+            Settings.from_env({**env, "ALLOW_INSECURE_SIGNING_SECRET": off})
+
+
+def test_the_escape_hatch_does_not_allow_an_empty_secret():
+    with pytest.raises(ConfigError, match="required"):
+        Settings.from_env({"SIGNING_SECRET": "", "ALLOW_INSECURE_SIGNING_SECRET": "1"})
 
 
 def test_settings_from_env():

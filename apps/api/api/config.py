@@ -44,9 +44,10 @@ def check_signing_secret(secret: str, env: Mapping[str, str]) -> None:
     weak = len(secret) < MIN_SECRET_LENGTH or secret.lower().startswith(PLACEHOLDER_SECRET_PREFIXES)
     if weak:
         raise ConfigError(
-            f"SIGNING_SECRET must be a random value of at least {MIN_SECRET_LENGTH} characters, "
-            "not a placeholder (generate one with: openssl rand -hex 32). "
-            "Set ALLOW_INSECURE_SIGNING_SECRET=1 to bypass this check for local development only."
+            f"SIGNING_SECRET is too weak: it must be at least {MIN_SECRET_LENGTH} characters and "
+            "not a placeholder such as 'changeme'. Generate one with `openssl rand -hex 32` and "
+            "set it in infra/.env. For local development only, ALLOW_INSECURE_SIGNING_SECRET=1 "
+            "bypasses this check."
         )
 
 

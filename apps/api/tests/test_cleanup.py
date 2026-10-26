@@ -283,17 +283,22 @@ def test_song_deleted_by_a_concurrent_sweep_before_its_turn_does_not_abort(clien
     ctx = client.app.state.ctx
     ids = [upload(client, bytes([i]) * 8, f"{i}.wav").json()["id"] for i in range(3)]
     clock.advance(hours=25)
-    victim = sorted(ids)[1]  # the sweep reaches ids in query order; remove one mid-sweep
+    victim: str | None = None
 
     class Racing:
         def __init__(self, inner) -> None:
             self.inner = inner
             self.raced = False
+            self.seen: set[str] = set()
 
         def delete_song(self, song_id: str) -> None:
+            nonlocal victim
             if not self.raced:
+                # Whatever order the sweep visits songs in, remove a song it has not reached yet.
                 self.raced = True
+                victim = next(i for i in ids if i != song_id and i not in self.seen)
                 remove_everywhere(ctx, self.inner, victim)
+            self.seen.add(song_id)
             self.inner.delete_song(song_id)
 
         def __getattr__(self, name):
@@ -303,6 +308,7 @@ def test_song_deleted_by_a_concurrent_sweep_before_its_turn_does_not_abort(clien
     report = sweep_expired(ctx)
 
     assert report.failed == []
+    assert victim is not None
     assert set(report.deleted) >= set(ids) - {victim}
     assert set(report.deleted) <= set(ids)
     assert count(client, Song) == 0
