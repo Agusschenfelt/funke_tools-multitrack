@@ -384,6 +384,24 @@ def test_rq_queue_fetch_returns_aware_utc_datetimes(monkeypatch):
     assert remote.result == {"bpm": 100}
 
 
+def test_rq_queue_fetch_maps_the_real_jobstatus_enum(monkeypatch):
+    from rq.job import Job, JobStatus
+
+    from api.queueing import RqQueue, map_status
+
+    class EnumStatusJob(StubRqJob):
+        def get_status(self, refresh=True):
+            return JobStatus.FINISHED
+
+    monkeypatch.setattr(Job, "fetch", staticmethod(lambda job_id, connection: EnumStatusJob()))
+    queue = RqQueue("redis://unused")
+    queue._connection = object()
+    remote = queue.fetch("x")
+
+    assert remote.status == "finished"
+    assert map_status(remote.status) == "finished"
+
+
 def test_rq_queue_fetch_distinguishes_missing_from_outage(monkeypatch):
     from redis.exceptions import ConnectionError as RedisConnectionError
     from rq.exceptions import NoSuchJobError

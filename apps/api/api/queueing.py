@@ -121,8 +121,10 @@ class RqQueue:
 
         try:
             job = Job.fetch(job_id, connection=self._conn())
+            status = job.get_status(refresh=True)
             return RemoteJob(
-                status=str(job.get_status(refresh=True)),
+                # RQ returns a JobStatus enum whose str() is "JobStatus.FINISHED"; use its value.
+                status=str(getattr(status, "value", status)),
                 stage=job.meta.get("stage"),
                 error=_last_line(job.latest_result().exc_string if job.latest_result() else None)
                 if job.is_failed
