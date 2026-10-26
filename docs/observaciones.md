@@ -14,6 +14,8 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 ## Prueba de la v1 con el equipo
 
+Para que el equipo pruebe hace falta publicar la v1 en un servidor: hoy todo corre solo en la Mac de desarrollo (Docker + `pnpm dev`).
+
 Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durante el desarrollo.
 
 - Subir 3 o 4 temas reales de distintos géneros (rock, cumbia, folklore, trap) y anotar si el BPM, el tono y el compás son correctos.
