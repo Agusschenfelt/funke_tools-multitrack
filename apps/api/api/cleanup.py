@@ -11,12 +11,19 @@ It runs in two ways:
   the FastAPI lifespan (``cleanup_loop``);
 * once, from cron or a one-off container: ``python -m api.cleanup``.
 
+One song failing to delete (a storage error) is logged and skipped; the sweep continues and the
+song, still expired, is retried by the next sweep. Songs with a queued or running job are left
+alone until they are ``INFLIGHT_MARGIN`` past expiry, so a slow job is not deleted from under its
+worker, but a job stuck forever cannot keep a song alive indefinitely.
+
 Safe to run from several places at once: deleting an already-deleted song is a no-op.
 """
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import timedelta
 
 from sqlalchemy import delete, select
 
@@ -25,20 +32,51 @@ from api.models import Job, Pack, SectionsState, Song
 
 log = logging.getLogger(__name__)
 
+INFLIGHT_MARGIN = timedelta(hours=1)
+ACTIVE_STATUSES = ("queued", "running")
+
+
+@dataclass
+class SweepReport:
+    deleted: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    skipped_in_flight: list[str] = field(default_factory=list)
+
+
+def sweep_expired(ctx: AppContext) -> SweepReport:
+    """Delete every expired song, isolating failures per song; return what happened."""
+    now = ctx.now()
+    report = SweepReport()
+    with ctx.session_factory() as session:
+        expired = list(session.scalars(select(Song).where(Song.expires_at <= now)))
+        for song in expired:
+            song_id = song.id
+            try:
+                active = session.scalar(
+                    select(Job.id)
+                    .where(Job.song_id == song_id, Job.status.in_(ACTIVE_STATUSES))
+                    .limit(1)
+                )
+                if active is not None and now < song.expires_at + INFLIGHT_MARGIN:
+                    report.skipped_in_flight.append(song_id)
+                    continue
+                ctx.storage.delete_song(song_id)
+                session.execute(delete(Job).where(Job.song_id == song_id))
+                session.execute(delete(Pack).where(Pack.song_id == song_id))
+                session.execute(delete(SectionsState).where(SectionsState.song_id == song_id))
+                session.execute(delete(Song).where(Song.id == song_id))
+                session.commit()
+                report.deleted.append(song_id)
+            except Exception:  # noqa: BLE001 - one poisoned song must not abort the sweep
+                session.rollback()
+                log.exception("expiry cleanup failed for song %s; will retry next sweep", song_id)
+                report.failed.append(song_id)
+    return report
+
 
 def cleanup_expired(ctx: AppContext) -> list[str]:
     """Delete every song with ``expires_at <= now``; return the deleted song ids."""
-    now = ctx.now()
-    with ctx.session_factory() as session:
-        expired = list(session.scalars(select(Song.id).where(Song.expires_at <= now)))
-        for song_id in expired:
-            ctx.storage.delete_song(song_id)
-            session.execute(delete(Job).where(Job.song_id == song_id))
-            session.execute(delete(Pack).where(Pack.song_id == song_id))
-            session.execute(delete(SectionsState).where(SectionsState.song_id == song_id))
-            session.execute(delete(Song).where(Song.id == song_id))
-            session.commit()
-    return expired
+    return sweep_expired(ctx).deleted
 
 
 async def cleanup_loop(
@@ -49,9 +87,14 @@ async def cleanup_loop(
     """Sweep immediately, then every ``interval`` seconds, until cancelled. Errors are logged."""
     while True:
         try:
-            deleted = await asyncio.to_thread(cleanup_expired, ctx)
-            if deleted:
-                log.info("expiry cleanup deleted %d song(s)", len(deleted))
+            report = await asyncio.to_thread(sweep_expired, ctx)
+            if report.deleted or report.failed or report.skipped_in_flight:
+                log.info(
+                    "expiry cleanup: deleted %d, failed %d, deferred %d (job in flight)",
+                    len(report.deleted),
+                    len(report.failed),
+                    len(report.skipped_in_flight),
+                )
         except Exception:  # noqa: BLE001 - one failed sweep must not stop the schedule
             log.exception("expiry cleanup failed")
         await sleep(interval)
@@ -62,10 +105,14 @@ def main() -> None:
     from api.main import build_context
 
     ctx = build_context(Settings.from_env(), None, None)
-    deleted = cleanup_expired(ctx)
-    print(f"deleted {len(deleted)} expired song(s)")
-    for song_id in deleted:
+    report = sweep_expired(ctx)
+    print(f"deleted {len(report.deleted)} expired song(s)")
+    for song_id in report.deleted:
         print(song_id)
+    if report.failed:
+        print(f"failed {len(report.failed)} song(s); retried next sweep")
+    if report.skipped_in_flight:
+        print(f"deferred {len(report.skipped_in_flight)} song(s) with a job in flight")
 
 
 if __name__ == "__main__":

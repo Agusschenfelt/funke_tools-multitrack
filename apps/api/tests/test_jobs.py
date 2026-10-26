@@ -100,11 +100,15 @@ def test_stagepack_validates_options(client, queue, store, song):
     assert queue.enqueued == []
 
 
-def test_queue_down_returns_503_and_leaves_no_job(client, queue, song):
+def test_queue_down_returns_503_and_keeps_a_failed_job(client, queue, song):
     queue.fail_enqueue = QueueUnavailable("redis down")
     response = client.post(f"/songs/{song['id']}/analyze")
 
     assert response.status_code == 503
+    with client.app.state.ctx.session_factory() as session:
+        (row,) = session.query(Job).all()
+        assert row.status == "failed"
+        assert "enqueue failed" in row.error
     queue.fail_enqueue = None
     job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
     assert client.get(f"/jobs/{job_id}").status_code == 200
@@ -252,6 +256,61 @@ def test_lost_job_is_failed_after_grace(client, queue, clock, settings, song):
     assert client.get(f"/jobs/{job_id}").json()["status"] == "failed"
 
 
+def test_expired_rq_entry_with_artifact_is_finished_not_lost(
+    client, queue, store, clock, settings, song
+):
+    job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
+    store.put_bytes(song["id"], "analysis.json", b'{"duration": 12.5}')
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+    body = client.get(f"/jobs/{job_id}").json()  # RQ forgot the job before anyone polled
+
+    assert body["status"] == "finished"
+    assert body["error"] is None
+    assert body["finished_at"] is not None
+    assert client.get(f"/songs/{song['id']}").json()["duration"] == 12.5
+
+
+def test_expired_rq_entry_separate_artifact_is_finished(
+    client, queue, store, clock, settings, song
+):
+    job_id = client.post(f"/songs/{song['id']}/separate").json()["job_id"]
+    store.put_bytes(song["id"], "stems/stemset.json", b"{}")
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    assert client.get(f"/jobs/{job_id}").json()["status"] == "finished"
+
+
+def test_expired_rq_entry_stagepack_artifact_records_the_pack_name(
+    client, queue, store, clock, settings, song
+):
+    put_analysis_and_stems(store, song["id"])
+    job_id = client.post(f"/songs/{song['id']}/stagepack", json={"destination": "daw"}).json()[
+        "job_id"
+    ]
+    store.put_bytes(song["id"], "packs/Song One-daw.zip", b"zip")
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+    body = client.get(f"/jobs/{job_id}").json()
+
+    assert body["status"] == "finished"
+    with client.app.state.ctx.session_factory() as session:
+        assert session.query(Pack).one().filename == "Song One-daw.zip"
+
+
+def test_expired_rq_entry_without_artifact_is_still_lost(client, queue, clock, settings, song):
+    job_id = client.post(f"/songs/{song['id']}/separate").json()["job_id"]
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    body = client.get(f"/jobs/{job_id}").json()
+    assert body["status"] == "failed"
+    assert "job lost" in body["error"]
+
+
+def test_rq_records_outlive_the_song_life():
+    from api.queueing import RESULT_TTL_SECONDS
+
+    assert RESULT_TTL_SECONDS >= 24 * 3600
+
+
 def test_running_job_the_queue_forgot_is_also_failed(client, queue, clock, settings, song):
     job_id = client.post(f"/songs/{song['id']}/analyze").json()["job_id"]
     queue.remote[job_id] = RemoteJob(status="started", stage="analyzing")
@@ -349,7 +408,7 @@ def test_rq_queue_fetch_distinguishes_missing_from_outage(monkeypatch):
         queue.fetch("x")
 
 
-def test_finished_job_with_naive_rq_times_is_stored(client, queue, song):
+def test_finished_job_with_aware_rq_times_is_stored(client, queue, song):
     """End to end: RqQueue-style aware datetimes bind to the UTC column without error."""
     from datetime import UTC, datetime
 
@@ -383,15 +442,16 @@ def test_job_row_is_committed_before_enqueue(client, queue, song):
     assert seen["row"].status == "queued"
 
 
-def test_failed_enqueue_removes_job_and_pack_rows(client, queue, store, song):
+def test_failed_enqueue_keeps_rows_as_failed_not_deleted(client, queue, store, song):
     put_analysis_and_stems(store, song["id"])
     queue.fail_enqueue = QueueUnavailable("redis down")
     response = client.post(f"/songs/{song['id']}/stagepack", json={"destination": "daw"})
 
     assert response.status_code == 503
     with client.app.state.ctx.session_factory() as session:
-        assert session.query(Job).count() == 0
-        assert session.query(Pack).count() == 0
+        (job,) = session.query(Job).all()
+        assert job.status == "failed"
+        assert session.query(Pack).count() == 1
 
 
 def test_reanalysis_never_asks_the_worker_to_overwrite_edited_sections(client, queue, store, song):

@@ -9,7 +9,10 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 QUEUE_NAME = "cpu"
-RESULT_TTL_SECONDS = 24 * 3600
+# RQ keeps finished/failed job records this long. Twice the 24 h song life, so a record outlives
+# the song it belongs to even for jobs that finish late in its life; the API also falls back to
+# storage artifacts when a record is gone (services._fail_if_lost).
+RESULT_TTL_SECONDS = 48 * 3600
 
 ANALYZE_FUNC = "worker_cpu.jobs.analyze_job"
 SEPARATE_FUNC = "worker_cpu.jobs.separate_job"

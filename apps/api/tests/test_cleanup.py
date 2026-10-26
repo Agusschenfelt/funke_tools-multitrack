@@ -4,7 +4,7 @@ import pytest
 from conftest import SECRET, upload
 from fastapi.testclient import TestClient
 
-from api.cleanup import cleanup_expired, cleanup_loop
+from api.cleanup import INFLIGHT_MARGIN, cleanup_expired, cleanup_loop, sweep_expired
 from api.config import ConfigError, Settings
 from api.main import create_app
 from api.models import Job, Pack, SectionsState, Song
@@ -26,6 +26,10 @@ def populate(client, queue, store, content: bytes, name: str) -> dict:
     assert client.put(f"/songs/{sid}/sections", json=sections).status_code == 200
     client.post(f"/songs/{sid}/analyze")
     client.post(f"/songs/{sid}/stagepack", json={"destination": "daw"})
+    with client.app.state.ctx.session_factory() as session:  # settled jobs do not defer cleanup
+        for job in session.query(Job).filter(Job.song_id == sid):
+            job.status = "finished"
+        session.commit()
     return song
 
 
@@ -55,6 +59,59 @@ def test_cleanup_boundary_is_exactly_24_hours(client, store, clock):
     assert cleanup_expired(client.app.state.ctx) == []
     clock.advance(seconds=1)
     assert cleanup_expired(client.app.state.ctx) == [song["id"]]
+
+
+class FlakyStorage:
+    """Delegates to the real storage but raises for the configured song ids."""
+
+    def __init__(self, inner, bad: set[str]) -> None:
+        self.inner = inner
+        self.bad = bad
+
+    def delete_song(self, song_id: str) -> None:
+        if song_id in self.bad:
+            raise OSError("disk error")
+        self.inner.delete_song(song_id)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+def test_one_failing_song_does_not_abort_the_sweep_and_is_retried(client, store, clock):
+    ctx = client.app.state.ctx
+    first = upload(client, b"one", "1.wav").json()["id"]
+    second = upload(client, b"two", "2.wav").json()["id"]
+    third = upload(client, b"three", "3.wav").json()["id"]
+    clock.advance(hours=25)
+    ctx.storage = FlakyStorage(store, {second})
+
+    report = sweep_expired(ctx)
+
+    assert sorted(report.deleted) == sorted([first, third])
+    assert report.failed == [second]
+    with ctx.session_factory() as session:
+        assert [s.id for s in session.query(Song)] == [second]  # row kept for the retry
+
+    ctx.storage = store  # the storage recovers
+    retry = sweep_expired(ctx)
+    assert retry.deleted == [second]
+    assert retry.failed == []
+    assert count(client, Song) == 0
+
+
+def test_song_with_running_job_is_deferred_until_past_the_margin(client, store, clock):
+    song = upload(client, b"busy", "b.wav").json()
+    client.post(f"/songs/{song['id']}/analyze")  # stays queued
+    ctx = client.app.state.ctx
+    clock.advance(hours=24, seconds=1)
+
+    report = sweep_expired(ctx)
+    assert report.skipped_in_flight == [song["id"]]
+    assert report.deleted == []
+    assert count(client, Song) == 1
+
+    clock.advance(seconds=INFLIGHT_MARGIN.total_seconds())
+    assert sweep_expired(ctx).deleted == [song["id"]]
 
 
 def test_cleanup_is_idempotent_and_empty_is_a_no_op(client, store, clock):
@@ -144,7 +201,7 @@ def test_cleanup_loop_sweeps_then_sleeps_and_survives_errors(client, store, cloc
         if len(calls) == 3:
             raise asyncio.CancelledError
 
-    real = cleanup_expired
+    real = sweep_expired
     attempts = []
 
     def flaky(c):
@@ -153,7 +210,7 @@ def test_cleanup_loop_sweeps_then_sleeps_and_survives_errors(client, store, cloc
             raise RuntimeError("database blip")
         return real(c)
 
-    monkeypatch.setattr("api.cleanup.cleanup_expired", flaky)
+    monkeypatch.setattr("api.cleanup.sweep_expired", flaky)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(cleanup_loop(ctx, 900, sleep=fake_sleep))
 
