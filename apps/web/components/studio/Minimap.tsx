@@ -2,14 +2,14 @@
 
 import { useCallback, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import type { StudioEngine } from "@/lib/audio/engine";
-import { upperBound } from "@/lib/audio/grid";
 import { formatClock } from "@/lib/audio/grid";
+import { minimapSeekTarget } from "@/lib/audio/minimapKeys";
 import type { StripGroup } from "@/lib/strip";
 import { useFrame } from "./hooks";
 import { Playhead } from "./Playhead";
 import styles from "./Transport.module.css";
 
-/** The whole song at a glance, sections to scale. Click to seek; arrow keys move a bar. */
+/** The whole song at a glance, sections to scale. Click to seek; arrows move a bar, Page keys four. */
 export function Minimap({
   engine,
   groups,
@@ -38,21 +38,13 @@ export function Minimap({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const now = engine.getPosition();
-    const bars = upperBound(downbeats, now + 1e-3);
-    if (event.key === "ArrowRight") {
-      engine.seek(downbeats[bars] ?? duration);
-    } else if (event.key === "ArrowLeft") {
-      // Back to the start of this bar, or the previous one when already there.
-      const here = downbeats[bars - 1];
-      engine.seek(here !== undefined && now - here > 1 ? here : (downbeats[bars - 2] ?? 0));
-    } else if (event.key === "Home") {
-      engine.seek(0);
-    } else if (event.key === "End") {
-      engine.seek(duration);
-    } else {
-      return;
-    }
+    const target = minimapSeekTarget(event.key, {
+      now: engine.getPosition(),
+      downbeats,
+      duration,
+    });
+    if (target === null) return;
+    engine.seek(target);
     event.preventDefault();
   };
 

@@ -13,7 +13,6 @@ import {
   type SongDetail,
 } from "@/lib/api";
 import { StudioEngine, type LoadFailure } from "@/lib/audio/engine";
-import { barPosition } from "@/lib/audio/grid";
 import { beatsPerBar } from "@/lib/audio/grid";
 import { stemGains } from "@/lib/audio/mix";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
@@ -120,25 +119,66 @@ function failureText(failure: LoadFailure | null): string {
       return "Los enlaces de las pistas vencieron o ya no existen. Pedilos de nuevo.";
     case "decode":
       return "Este navegador no pudo leer una de las pistas.";
+    case "unsupported":
+      return "Este navegador no puede reproducir audio.";
     default:
       return "No pudimos descargar las pistas. Revisá tu conexión.";
   }
 }
 
-function StudioBody({
-  songId,
-  song,
-  analysis,
-  sections,
-  onReload,
-}: {
+interface BodyProps {
   songId: string;
   song: SongDetail;
   analysis: Analysis;
   sections: Section[];
   onReload: () => void;
-}) {
-  const [engine] = useState(() => new StudioEngine());
+}
+
+/**
+ * Owns the engine's lifetime: one engine per mount, created in the effect and disposed in its
+ * cleanup. A disposed engine is final, so React Strict Mode's second effect run (or any remount)
+ * gets a fresh one instead of reusing a dead context.
+ */
+function StudioBody(props: BodyProps) {
+  const { song } = props;
+  const [engine, setEngine] = useState<StudioEngine | null>(null);
+
+  useEffect(() => {
+    const next = new StudioEngine();
+    const controller = new AbortController();
+    // Publishing an external resource created by this effect; it cannot be created during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEngine(next);
+    next.load(orderStems(song.artifacts.stems), controller.signal).catch(() => {
+      // load() reports its own failures through the engine state; this only keeps a bug from
+      // surfacing as an unhandled rejection.
+      if (!controller.signal.aborted) next.reportFailure("network");
+    });
+    return () => {
+      controller.abort();
+      next.dispose();
+      setEngine(null);
+    };
+  }, [song]);
+
+  if (!engine) {
+    return (
+      <p className={styles.loadingNote} role="status">
+        Cargando el estudio…
+      </p>
+    );
+  }
+  return <StudioStage engine={engine} {...props} />;
+}
+
+function StudioStage({
+  engine,
+  songId,
+  song,
+  analysis,
+  sections,
+  onReload,
+}: BodyProps & { engine: StudioEngine }) {
   const state = useEngineState(engine);
 
   const grid = analysis.grid;
@@ -161,15 +201,6 @@ function StudioBody({
       cues: cuePlacements(sections, beats, downbeats, perBar),
     });
   }, [engine, beats, downbeats, sections, perBar]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void engine.load(orderStems(song.artifacts.stems), controller.signal);
-    return () => {
-      controller.abort();
-      engine.dispose();
-    };
-  }, [engine, song]);
 
   // The section under the playhead; state changes only when it moves to another section.
   const [active, setActive] = useState<{ group: number; span: number } | null>(null);
@@ -260,5 +291,3 @@ function StudioBody({
     </>
   );
 }
-
-export { barPosition };

@@ -42,9 +42,12 @@ export function beatsPerBar(timeSignature: string | undefined): number {
 const EPS = 1e-3;
 
 export interface BarBeat {
-  /** 1-based; 0 before the first downbeat. */
+  /** 1-based; 0 before the first downbeat (the pickup). */
   bar: number;
-  /** 1-based, at most the beats per bar. */
+  /**
+   * 1-based, at most the beats per bar. In the pickup it is negative: -1 is the beat right before
+   * the first downbeat, -2 the one before that, and 0 means no beat has sounded yet.
+   */
   beat: number;
 }
 
@@ -55,14 +58,29 @@ export function barPosition(
   perBar: number,
 ): BarBeat {
   const bars = upperBound(downbeats, time + EPS);
-  const barStart = bars > 0 ? downbeats[bars - 1] - EPS : -Infinity;
+  if (bars === 0) return { bar: 0, beat: pickupBeat(time, beats, downbeats[0]) };
+  const barStart = downbeats[bars - 1] - EPS;
   const reached = upperBound(beats, time + EPS) - lowerBound(beats, barStart);
   return { bar: bars, beat: Math.min(perBar, Math.max(1, reached)) };
 }
 
-/** `compás:tiempo`, e.g. `12:3`. */
+/** Beats left until the first downbeat, as a negative count; 0 when no beat has been reached. */
+function pickupBeat(time: number, beats: readonly number[], firstDownbeat: number | undefined): number {
+  const reached = upperBound(beats, time + EPS);
+  if (reached === 0 || firstDownbeat === undefined) return 0;
+  const downbeatIndex = lowerBound(beats, firstDownbeat - EPS);
+  return -Math.max(1, downbeatIndex - (reached - 1));
+}
+
+/**
+ * Readout for the transport. Bars and beats count from 1 (`12:3`). Before the first downbeat
+ * (the pickup, or anacrusis) the beats are counted down to it: `1:−2` is two beats before bar 1,
+ * `1:−1` is the beat just before it, the way a musician counts "two, one, ONE". Before the first
+ * beat there is nothing to count, so it reads `—`.
+ */
 export function formatBarBeat({ bar, beat }: BarBeat): string {
-  return `${bar}:${beat}`;
+  if (bar > 0) return `${bar}:${beat}`;
+  return beat < 0 ? `1:\u2212${-beat}` : "\u2014";
 }
 
 /** `m:ss` (floored, never negative). */

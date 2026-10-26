@@ -52,7 +52,7 @@ export function Transport({
       if (barRef.current) {
         barRef.current.textContent = hasGrid
           ? formatBarBeat(barPosition(position, beats, downbeats, perBar))
-          : "–:–";
+          : "—";
       }
       if (clockRef.current) clockRef.current.textContent = formatClock(position);
     },
@@ -84,7 +84,7 @@ export function Transport({
         <p className={styles.readout}>
           <span className="visually-hidden">Compás y tiempo: </span>
           <span ref={barRef} className={`${styles.bars} mono`}>
-            0:1
+            —
           </span>
           <span className={`${styles.clock} mono`}>
             <span ref={clockRef}>0:00</span> / {formatClock(duration)}

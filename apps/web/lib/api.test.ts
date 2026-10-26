@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  checkAnalysis,
   describeError,
+  getAnalysis,
   getJob,
+  isValidGrid,
   messageForStatus,
   parseDetail,
   uploadSong,
+  type Analysis,
 } from "./api";
 
 afterEach(() => {
@@ -174,5 +178,49 @@ describe("request error bodies", () => {
   it("reports a non-JSON success body as invalid data", async () => {
     stub(new Response("not json", { status: 200 }));
     await expect(getJob("j1")).rejects.toMatchObject({ kind: "invalid" });
+  });
+});
+
+describe("analysis grid validation", () => {
+  const grid = { bpm: 120, beats: [0.5, 1, 1.5, 2], downbeats: [0.5, 2.5], time_signature: "4/4" };
+  const analysis = (g: unknown): Analysis =>
+    ({ source: "x", duration: 10, sample_rate: 44100, grid: g, key: null }) as Analysis;
+
+  it("accepts a well-formed grid, an empty one and no grid", () => {
+    expect(isValidGrid(grid)).toBe(true);
+    expect(isValidGrid({ ...grid, beats: [], downbeats: [] })).toBe(true);
+    expect(checkAnalysis(analysis(null)).grid).toBeNull();
+  });
+
+  it.each([
+    ["NaN beat", { ...grid, beats: [0.5, Number.NaN] }],
+    ["string beat", { ...grid, beats: [0.5, "1"] }],
+    ["decreasing beats", { ...grid, beats: [1, 0.5] }],
+    ["duplicate downbeats", { ...grid, downbeats: [0.5, 0.5] }],
+    ["negative downbeat", { ...grid, downbeats: [-1, 0.5] }],
+    ["beats not an array", { ...grid, beats: null }],
+    ["zero bpm", { ...grid, bpm: 0 }],
+    ["bad signature", { ...grid, time_signature: "four" }],
+    ["zero numerator", { ...grid, time_signature: "0/4" }],
+  ])("rejects %s", (_name, bad) => {
+    expect(isValidGrid(bad)).toBe(false);
+    expect(() => checkAnalysis(analysis(bad))).toThrowError(ApiError);
+  });
+
+  it("getAnalysis surfaces an invalid grid as an invalid-data error", async () => {
+    const bad = analysis({ ...grid, beats: [1, Number.NaN] });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...bad, grid: { ...grid, beats: [1, "x"] } }))),
+    );
+    const error = await getAnalysis("s1").catch((e) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.kind).toBe("invalid");
+    expect(describeError(error)).toContain("datos");
+  });
+
+  it("getAnalysis rejects a missing duration", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ grid: null }))));
+    await expect(getAnalysis("s1")).rejects.toMatchObject({ kind: "invalid" });
   });
 });

@@ -254,6 +254,11 @@ export class StudioEngine {
     }
   }
 
+  /** For callers that caught an unexpected load error: surfaces it as a visible error state. */
+  reportFailure(failure: LoadFailure) {
+    this.set({ status: "error", failure });
+  }
+
   /** Stops whatever is sounding and forgets the previous song's audio graph. */
   private resetForLoad() {
     this.playToken += 1;

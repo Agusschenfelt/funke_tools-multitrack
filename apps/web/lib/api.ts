@@ -196,6 +196,43 @@ export function describeError(error: unknown): string {
   return "Algo salió mal. Probá de nuevo.";
 }
 
+/* ----------------------------------------------------------- validation */
+
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
+function increasing(values: unknown): values is number[] {
+  if (!Array.isArray(values)) return false;
+  let previous = -Infinity;
+  for (const value of values) {
+    if (!finite(value) || value < 0 || value <= previous) return false;
+    previous = value;
+  }
+  return true;
+}
+
+/**
+ * True when a grid can drive the UI: positive BPM, beats and downbeats as finite, non-negative,
+ * strictly increasing seconds, and a `n/d` time signature with positive integers.
+ */
+export function isValidGrid(grid: unknown): grid is NonNullable<Analysis["grid"]> {
+  if (!grid || typeof grid !== "object") return false;
+  const g = grid as Record<string, unknown>;
+  if (!finite(g.bpm) || g.bpm <= 0) return false;
+  if (!increasing(g.beats) || !increasing(g.downbeats)) return false;
+  return typeof g.time_signature === "string" && /^[1-9]\d{0,2}\/[1-9]\d{0,2}$/.test(g.time_signature);
+}
+
+/** Boundary check for GET /analysis: a malformed grid becomes a clear error, never NaN in the UI. */
+export function checkAnalysis(analysis: Analysis): Analysis {
+  if (!analysis || typeof analysis !== "object" || !finite(analysis.duration)) {
+    throw new ApiError("invalid", null, "analysis without a valid duration");
+  }
+  if (analysis.grid !== null && analysis.grid !== undefined && !isValidGrid(analysis.grid)) {
+    throw new ApiError("invalid", null, "analysis grid has an invalid shape");
+  }
+  return analysis;
+}
+
 /* ------------------------------------------------------------- requests */
 
 interface RequestOptions {
@@ -278,8 +315,9 @@ export function getJob(jobId: string, options: RequestOptions = {}): Promise<Job
   return request<JobOut>(`/jobs/${encodeURIComponent(jobId)}`, options);
 }
 
-export function getAnalysis(songId: string, options: RequestOptions = {}): Promise<Analysis> {
-  return request<Analysis>(`/songs/${encodeURIComponent(songId)}/analysis`, options);
+export async function getAnalysis(songId: string, options: RequestOptions = {}): Promise<Analysis> {
+  const analysis = await request<Analysis>(`/songs/${encodeURIComponent(songId)}/analysis`, options);
+  return checkAnalysis(analysis);
 }
 
 export function getSections(songId: string, options: RequestOptions = {}): Promise<SectionsOut> {
