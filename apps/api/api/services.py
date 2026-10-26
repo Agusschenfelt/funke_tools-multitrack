@@ -43,8 +43,22 @@ def make_link(ctx: AppContext, song: Song, name: str) -> ArtifactLink:
     expires_at = token_expiry(ctx, song)
     token = tokens.sign(ctx.settings.signing_secret, song.id, name, expires_at)
     return ArtifactLink(
-        name=name.split("/", 1)[1], url=f"/files/{token}", token_expires_at=expires_at
+        name=name.rsplit("/", 1)[1], url=f"/files/{token}", token_expires_at=expires_at
     )
+
+
+def pack_stored_name(ctx: AppContext, job: Job, filename: str) -> str | None:
+    """Stored object of a finished stagepack job, or None when it is not in storage.
+
+    Packs live at ``packs/<job_id>/<filename>``; a flat ``packs/<filename>`` is the legacy layout.
+    """
+    for name in (names.pack_object_name(job.id, filename), f"{names.PACKS_PREFIX}{filename}"):
+        try:
+            if ctx.storage.exists(job.song_id, name):
+                return name
+        except names.StorageError:
+            return None
+    return None
 
 
 def artifacts_of(session: Session, ctx: AppContext, song: Song) -> Artifacts:

@@ -7,7 +7,8 @@ the ``Storage`` protocol and ``LocalStorage`` into a shared light package (or in
 light core) and delete this copy.
 
 Well-known names (same as the worker): ``source.<ext>``, ``analysis.json``, ``sections.json``,
-``stems/<stem>.wav`` + ``stems/stemset.json``, ``packs/<name>.zip``.
+``stems/<stem>.wav`` + ``stems/stemset.json``, ``packs/<job_id>/<name>.zip`` (older flat
+``packs/<name>.zip`` stay servable).
 """
 
 import re
@@ -30,6 +31,11 @@ _SAFE_PART = re.compile(r"^[^/\\\x00]+$")
 def job_result_name(job_id: str) -> str:
     """Where the worker records what a finished job returned (``worker_cpu.jobs.tracked``)."""
     return f"{JOBS_PREFIX}{job_id}.json"
+
+
+def pack_object_name(job_id: str, zip_name: str) -> str:
+    """Stored name of a Stage Pack (same rule as ``worker_cpu.storage.pack_object_name``)."""
+    return f"{PACKS_PREFIX}{job_id}/{zip_name}"
 
 
 class StorageError(RuntimeError):

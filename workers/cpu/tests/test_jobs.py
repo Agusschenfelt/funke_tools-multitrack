@@ -95,8 +95,9 @@ def test_full_pipeline_builds_equal_length_pack(
     name = jobs.stagepack_job(song, {"destination": "daw", "sample_rate": 48000})
     assert recorder.stages == ["loading", "packing", "saving", "done"]
     assert name.endswith(".zip")
-    assert storage.list_names(song, "packs/") == [f"packs/{name}"]
-    with zipfile.ZipFile(io.BytesIO(storage.get_bytes(song, f"packs/{name}"))) as archive:
+    (stored,) = storage.list_names(song, "packs/")
+    assert stored.startswith("packs/") and stored.endswith(f"/{name}")
+    with zipfile.ZipFile(io.BytesIO(storage.get_bytes(song, stored))) as archive:
         wavs = [n for n in archive.namelist() if n.endswith(".wav")]
         frames = {sf.info(io.BytesIO(archive.read(n))).frames for n in wavs}
         assert len(wavs) >= len(STEM_NAMES) + 2
@@ -115,7 +116,24 @@ def test_jobs_run_through_an_rq_queue(
         assert job.get_status() == JobStatus.FINISHED
         assert job.meta["stage"] == "done"
     assert analyze.return_value()["section_count"] >= 1
-    assert pack.return_value() == storage.list_names(song, "packs/")[0].removeprefix("packs/")
+    assert storage.list_names(song, "packs/") == [f"packs/{pack.id}/{pack.return_value()}"]
+
+
+@requires_ffmpeg
+def test_two_packs_of_one_song_coexist(
+    song: str, storage: LocalStorage, fake_models: None, queue
+) -> None:
+    queue.enqueue(jobs.analyze_job, song)
+    queue.enqueue(jobs.separate_job, song)
+    daw = queue.enqueue(jobs.stagepack_job, song, {"destination": "daw", "sample_rate": 48000})
+    play = queue.enqueue(jobs.stagepack_job, song, {"destination": "playback"})
+
+    assert daw.return_value() == play.return_value()  # same readable ZIP name
+    stored = storage.list_names(song, "packs/")
+    assert stored == sorted(
+        [f"packs/{daw.id}/{daw.return_value()}", f"packs/{play.id}/{play.return_value()}"]
+    )
+    assert storage.get_bytes(song, stored[0]) != storage.get_bytes(song, stored[1])
 
 
 def test_failed_job_is_recorded_by_the_queue(storage_root: Path, fake_models: None, queue) -> None:

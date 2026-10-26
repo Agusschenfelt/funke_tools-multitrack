@@ -307,12 +307,6 @@
   font-size: var(--text-sm);
 }
 
-.packNote {
-  max-width: var(--measure);
-  color: var(--paper-dim);
-  font-size: var(--text-sm);
-}
-
 .action {
   display: grid;
   gap: var(--space-3);

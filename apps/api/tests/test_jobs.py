@@ -199,7 +199,7 @@ def test_finished_stagepack_returns_filename_and_working_download(client, queue,
     sid = song["id"]
     put_analysis_and_stems(store, sid)
     job_id = client.post(f"/songs/{sid}/stagepack", json={"destination": "daw"}).json()["job_id"]
-    store.put_bytes(sid, "packs/Song One - DAW.zip", b"PK-zip-bytes")
+    store.put_bytes(sid, f"packs/{job_id}/Song One - DAW.zip", b"PK-zip-bytes")
     queue.remote[job_id] = RemoteJob(status="finished", stage="done", result="Song One - DAW.zip")
 
     body = client.get(f"/jobs/{job_id}").json()
@@ -217,6 +217,32 @@ def test_finished_stagepack_returns_filename_and_working_download(client, queue,
     assert pack.filename == "Song One - DAW.zip"
     assert pack.job_id == job_id
     assert pack.options["destination"] == "daw"
+
+
+def test_two_packs_of_one_song_keep_their_own_files_and_links(client, queue, store, song):
+    """Same readable ZIP name, different options: neither pack overwrites or serves the other."""
+    sid = song["id"]
+    put_analysis_and_stems(store, sid)
+    first = stagepack(client, sid, destination="daw")
+    second = stagepack(client, sid, destination="playback")
+    store.put_bytes(sid, f"packs/{first}/Song - C - 90 BPM.zip", b"first-pack")
+    store.put_bytes(sid, f"packs/{second}/Song - C - 90 BPM.zip", b"second-pack")
+    for job_id in (first, second):
+        queue.remote[job_id] = RemoteJob(
+            status="finished", stage="done", result="Song - C - 90 BPM.zip"
+        )
+
+    urls = [client.get(f"/jobs/{j}").json()["download_url"] for j in (first, second)]
+    assert urls[0] != urls[1]
+    bodies = [client.get(u) for u in urls]
+    assert [r.content for r in bodies] == [b"first-pack", b"second-pack"]
+    assert all(
+        "Song%20-%20C%20-%2090%20BPM.zip" in r.headers["content-disposition"] for r in bodies
+    )
+
+    packs = client.get(f"/songs/{sid}").json()["artifacts"]["packs"]
+    assert [p["name"] for p in packs] == ["Song - C - 90 BPM.zip"] * 2
+    assert sorted(client.get(p["url"]).content for p in packs) == [b"first-pack", b"second-pack"]
 
 
 def test_unknown_job_is_404(client):
@@ -302,7 +328,7 @@ def test_expired_rq_entry_stagepack_records_the_pack_named_by_its_marker(
 ):
     put_analysis_and_stems(store, song["id"])
     job_id = stagepack(client, song["id"])
-    store.put_bytes(song["id"], "packs/Song One-daw.zip", b"zip")
+    store.put_bytes(song["id"], f"packs/{job_id}/Song One-daw.zip", b"zip")
     write_marker(store, song["id"], job_id, "Song One-daw.zip")
     clock.advance(seconds=settings.lost_job_grace_seconds)
     body = client.get(f"/jobs/{job_id}").json()
@@ -318,8 +344,7 @@ def test_lost_stagepack_never_adopts_another_jobs_pack(client, queue, store, clo
     put_analysis_and_stems(store, song["id"])
     done = stagepack(client, song["id"])
     lost = stagepack(client, song["id"], destination="playback")
-    store.put_bytes(song["id"], "packs/Pack A.zip", b"zip-a")
-    store.put_bytes(song["id"], "packs/Pack B.zip", b"zip-b")
+    store.put_bytes(song["id"], f"packs/{done}/Pack B.zip", b"zip-b")
     write_marker(store, song["id"], done, "Pack B.zip")
     clock.advance(seconds=settings.lost_job_grace_seconds)
 

@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
-from api import storage as names
 from api.deps import Ctx, DbSession, find_active_song
 from api.models import Job
 from api.queueing import FINISHED
 from api.schemas import JobOut
-from api.services import make_link, sync_job
+from api.services import make_link, pack_stored_name, sync_job
 
 router = APIRouter(tags=["jobs"])
 
@@ -20,8 +19,9 @@ def get_job(job_id: str, ctx: Ctx, session: DbSession) -> JobOut:
     download_url = None
     if job.kind == "stagepack" and job.status == FINISHED and job.result:
         filename = job.result.get("filename")
-        if filename and ctx.storage.exists(song.id, f"{names.PACKS_PREFIX}{filename}"):
-            download_url = make_link(ctx, song, f"{names.PACKS_PREFIX}{filename}").url
+        stored = pack_stored_name(ctx, job, filename) if filename else None
+        if stored:
+            download_url = make_link(ctx, song, stored).url
     return JobOut(
         job_id=job.id,
         song_id=job.song_id,

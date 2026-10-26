@@ -22,6 +22,7 @@ and only that, to recover the outcome of a job RQ has forgotten.
 import functools
 import json
 import tempfile
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -39,7 +40,6 @@ from rq import get_current_job
 from worker_cpu.config import cues_dir, get_storage
 from worker_cpu.storage import (
     ANALYSIS,
-    PACKS_PREFIX,
     SECTIONS,
     SECTIONS_DETECTED,
     SOURCE_PREFIX,
@@ -48,6 +48,7 @@ from worker_cpu.storage import (
     Storage,
     StorageError,
     lock_name,
+    pack_object_name,
     result_marker_name,
 )
 
@@ -207,7 +208,10 @@ def _fetch_stems(storage: Storage, song_id: str, stems_dir: Path) -> StemSet:
 
 @tracked
 def stagepack_job(song_id: str, options: dict[str, Any]) -> str:
-    """Build a Stage Pack from stored stems, analysis and sections; returns the ZIP name."""
+    """Build a Stage Pack from stored stems, analysis and sections; returns the readable ZIP name.
+
+    The ZIP is stored as ``packs/<job_id>/<zip name>``; the API derives that path from the job id.
+    """
     try:
         pack_options = StagePackOptions(**options)
     except ValueError as exc:
@@ -235,6 +239,9 @@ def stagepack_job(song_id: str, options: dict[str, Any]) -> str:
         )
         set_stage("saving")
         pack_name = result.zip_path.name
-        storage.put_file(song_id, f"{PACKS_PREFIX}{pack_name}", result.zip_path)
+        # One directory per job: a second pack of the song never overwrites this one. Outside an
+        # RQ job (direct calls) a fresh id keeps the same guarantee.
+        job_id = getattr(get_current_job(), "id", None) or uuid.uuid4().hex
+        storage.put_file(song_id, pack_object_name(job_id, pack_name), result.zip_path)
     set_stage("done")
     return pack_name
