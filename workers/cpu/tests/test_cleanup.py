@@ -56,3 +56,42 @@ def test_main_prints_deleted_ids(
     out = capsys.readouterr().out
     assert "deleted 1 expired song(s)" in out
     assert "s1" in out
+
+
+def test_one_failing_song_does_not_abort_the_run(storage_root: Path) -> None:
+    storage = LocalStorage(storage_root)
+    for song_id in ("a", "b", "c"):
+        storage.put_bytes(song_id, "source.wav", b"x")
+        age(storage, song_id, "source.wav", 48)
+    real_delete = storage.delete_song
+
+    def flaky(song_id: str) -> None:
+        if song_id == "b":
+            raise OSError("disk error")
+        real_delete(song_id)
+
+    storage.delete_song = flaky  # type: ignore[method-assign]
+
+    assert cleanup.cleanup_job(now=NOW, storage=storage) == ["a", "c"]
+    assert [e.song_id for e in storage.list_songs()] == ["b"]  # retried on the next run
+
+    storage.delete_song = real_delete  # type: ignore[method-assign]
+    assert cleanup.cleanup_job(now=NOW, storage=storage) == ["b"]
+
+
+def test_song_ttl_is_env_overridable_with_a_24_hour_default(
+    storage_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SONG_TTL_HOURS", raising=False)
+    assert cleanup.song_ttl_seconds() == 24 * HOUR
+    monkeypatch.setenv("SONG_TTL_HOURS", "2")
+    assert cleanup.song_ttl_seconds() == 2 * HOUR
+    for bad in ("abc", "0", "-3"):
+        monkeypatch.setenv("SONG_TTL_HOURS", bad)
+        assert cleanup.song_ttl_seconds() == 24 * HOUR
+
+    monkeypatch.setenv("SONG_TTL_HOURS", "2")
+    storage = LocalStorage(storage_root)
+    storage.put_bytes("s1", "source.wav", b"x")
+    age(storage, "s1", "source.wav", 3)
+    assert cleanup.cleanup_job(now=NOW) == ["s1"]
