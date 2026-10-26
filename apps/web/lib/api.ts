@@ -70,7 +70,7 @@ export interface Analysis {
   source: string;
   duration: number;
   sample_rate: number;
-  grid: { bpm: number; time_signature: string } | null;
+  grid: { bpm: number; beats: number[]; downbeats: number[]; time_signature: string } | null;
   key: { key: string; mode: string; camelot: string } | null;
 }
 

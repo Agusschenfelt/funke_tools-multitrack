@@ -1,0 +1,154 @@
+.studio {
+  --lane-head: 15rem;
+  width: 100%;
+  max-width: 90rem;
+  margin: 0 auto;
+  padding: 0 var(--gutter) 10rem;
+}
+
+.songBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-4) 0;
+}
+
+.title {
+  overflow: hidden;
+  font-size: var(--text-lg);
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.facts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  font-size: var(--text-lg);
+}
+
+.fact {
+  white-space: nowrap;
+}
+
+.mode {
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+}
+
+.meter {
+  color: var(--paper-dim);
+}
+
+.export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius);
+  background: var(--orange);
+  color: var(--on-orange);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.export:hover {
+  background: var(--orange-hover);
+}
+
+.export:active {
+  background: var(--orange-press);
+}
+
+.stage {
+  border-top: 1px solid var(--rule);
+}
+
+.notice,
+.fatal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  color: var(--error);
+}
+
+.fatal {
+  max-width: 44rem;
+  margin: var(--space-6) auto;
+}
+
+.notice p,
+.fatal p {
+  max-width: var(--measure);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--paper);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--ink-lifted);
+}
+
+.loadingNote {
+  padding: var(--space-6) 0;
+  color: var(--paper-dim);
+}
+
+@media (max-width: 47.99rem) {
+  .studio {
+    padding-bottom: 12rem;
+  }
+
+  .songBar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title export"
+      "facts facts";
+    gap: var(--space-3) var(--space-4);
+  }
+
+  .title {
+    grid-area: title;
+  }
+
+  .export {
+    grid-area: export;
+  }
+
+  .facts {
+    grid-area: facts;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-5);
+    font-size: var(--display);
+    font-weight: 700;
+    line-height: 1.05;
+  }
+
+  .mode {
+    font-size: var(--text-lg);
+  }
+}

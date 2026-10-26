@@ -1,0 +1,131 @@
+"use client";
+
+import { useCallback, useRef } from "react";
+import type { CueLanguage, EngineState, StudioEngine } from "@/lib/audio/engine";
+import { barPosition, formatBarBeat, formatClock } from "@/lib/audio/grid";
+import type { StripGroup } from "@/lib/strip";
+import { useFrame } from "./hooks";
+import { Minimap } from "./Minimap";
+import styles from "./Transport.module.css";
+
+interface TransportProps {
+  engine: StudioEngine;
+  state: EngineState;
+  groups: readonly StripGroup[];
+  beats: readonly number[];
+  downbeats: readonly number[];
+  perBar: number;
+  duration: number;
+  activeGroup: number | null;
+  hasGrid: boolean;
+}
+
+function PlayIcon({ playing }: { playing: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">
+      {playing ? (
+        <path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor" />
+      ) : (
+        <path d="M7 4l13 8-13 8z" fill="currentColor" />
+      )}
+    </svg>
+  );
+}
+
+export function Transport({
+  engine,
+  state,
+  groups,
+  beats,
+  downbeats,
+  perBar,
+  duration,
+  activeGroup,
+  hasGrid,
+}: TransportProps) {
+  const barRef = useRef<HTMLSpanElement>(null);
+  const clockRef = useRef<HTMLSpanElement>(null);
+  const ready = state.status === "ready";
+
+  const apply = useCallback(
+    (position: number) => {
+      if (barRef.current) {
+        barRef.current.textContent = hasGrid
+          ? formatBarBeat(barPosition(position, beats, downbeats, perBar))
+          : "–:–";
+      }
+      if (clockRef.current) clockRef.current.textContent = formatClock(position);
+    },
+    [beats, downbeats, perBar, hasGrid],
+  );
+  useFrame(engine, apply);
+
+  return (
+    <div className={styles.transport}>
+      <Minimap
+        engine={engine}
+        groups={groups}
+        downbeats={downbeats}
+        duration={duration}
+        activeGroup={activeGroup}
+      />
+      <div className={styles.controls}>
+        <button
+          type="button"
+          className={styles.play}
+          disabled={!ready}
+          aria-label={state.playing ? "Pausar" : "Reproducir"}
+          aria-keyshortcuts="Space"
+          onClick={engine.toggle}
+        >
+          <PlayIcon playing={state.playing} />
+        </button>
+
+        <p className={styles.readout}>
+          <span className="visually-hidden">Compás y tiempo: </span>
+          <span ref={barRef} className={`${styles.bars} mono`}>
+            0:1
+          </span>
+          <span className={`${styles.clock} mono`}>
+            <span ref={clockRef}>0:00</span> / {formatClock(duration)}
+          </span>
+        </p>
+
+        <div className={styles.toggles}>
+          <button
+            type="button"
+            className={styles.toggle}
+            aria-pressed={state.clickOn}
+            disabled={!hasGrid}
+            onClick={() => engine.setClick(!state.clickOn)}
+          >
+            Click
+          </button>
+          <button
+            type="button"
+            className={styles.toggle}
+            aria-pressed={state.cuesOn}
+            disabled={!hasGrid}
+            onClick={() => engine.setCues(!state.cuesOn)}
+          >
+            Guías
+          </button>
+          <select
+            className={styles.language}
+            aria-label="Idioma de las guías"
+            value={state.cueLanguage}
+            onChange={(event) => engine.setCueLanguage(event.target.value as CueLanguage)}
+          >
+            <option value="es">Español</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+      {state.cuesOn && state.cuesStatus === "error" && (
+        <p className={styles.note} role="status">
+          No se pudieron cargar las guías habladas.
+        </p>
+      )}
+    </div>
+  );
+}

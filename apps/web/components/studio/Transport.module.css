@@ -1,0 +1,175 @@
+.transport {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  padding: var(--space-3) var(--gutter) max(var(--space-3), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule);
+  background: var(--ink-raised);
+}
+
+.minimap {
+  position: relative;
+  height: 1.5rem;
+  max-width: 90rem;
+  margin: 0 auto var(--space-3);
+  background: var(--ink-lifted);
+  cursor: pointer;
+}
+
+.mapSection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--graphite);
+  pointer-events: none;
+}
+
+.mapActive {
+  background: color-mix(in srgb, var(--orange) 40%, transparent);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  max-width: 90rem;
+  margin: 0 auto;
+}
+
+.play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--orange);
+  color: var(--on-orange);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.play:hover:not(:disabled) {
+  background: var(--orange-hover);
+}
+
+.play:active:not(:disabled) {
+  background: var(--orange-press);
+}
+
+.play:disabled {
+  background: var(--ink-lifted);
+  color: var(--paper-dim);
+  cursor: not-allowed;
+}
+
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.bars {
+  min-width: 4ch;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.clock {
+  color: var(--paper-dim);
+  white-space: nowrap;
+}
+
+.toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.toggle,
+.language {
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--ink-lifted);
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
+}
+
+.toggle:disabled {
+  color: var(--paper-dim);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.language {
+  padding: 0 var(--space-3);
+  background: var(--ink-raised);
+}
+
+.note {
+  max-width: 90rem;
+  margin: var(--space-2) auto 0;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 47.99rem) {
+  .minimap {
+    height: 1.75rem;
+  }
+
+  .controls {
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-4);
+  }
+
+  .play {
+    width: 4rem;
+    height: 4rem;
+  }
+
+  .bars {
+    font-size: 2.25rem;
+  }
+
+  .readout {
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .toggles {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .toggle {
+    flex: 1;
+  }
+
+  .language {
+    flex: none;
+  }
+}
