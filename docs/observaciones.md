@@ -29,6 +29,8 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 ### Separación
 
+- La imagen Docker del worker pesa 10,5 GB porque torch para Linux baja los paquetes de CUDA desde PyPI. Usar el índice solo-CPU de PyTorch la achicaría mucho; está anotado en `infra/README.md`. La imagen de la API pesa 694 MB y no incluye torch.
+
 - En CPU (Mac Intel de desarrollo) `htdemucs_6s` tarda 0,70 s por segundo de audio. Para producción hace falta GPU.
 - El worker de Linux debe usar torch 2.6 o más nuevo. La versión 2.2.2 de desarrollo solo existe porque Intel macOS no tiene wheels más nuevas, y tiene una vulnerabilidad conocida (CVE-2025-32434).
 
