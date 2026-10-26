@@ -10,7 +10,6 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 | Prime (Loop Community) | Importar un Stage Pack real en Prime y anotar cómo reconoce los archivos | No hay documentación pública de nombres ni ruteo. Hasta entonces `--destination prime` da error a propósito |
 | Voces de las cues en español | Escuchar `assets/cues/es` y confirmar que suenan naturales | La voz `es_MX/ald` es lenta y se aceleró bastante (length_scale 0,52 en la cuenta) sin que nadie la escuchara |
 | Voz rioplatense propia | Grabar las 15 cues con una voz de la agencia | El brief pide cues en rioplatense. La única voz rioplatense de Piper (`es_AR/daniela`) tiene licencia CC BY-SA y una base sin licencia verificada |
-| Repositorio remoto | Crear el repo en GitHub y subir las ramas | Hoy no hay respaldo fuera de la máquina de desarrollo |
 | Canciones de prueba | Conseguir canciones de uso libre (CC0 o CC BY) con secciones anotadas | Hacen falta para medir la calidad real de la detección de secciones y del beat tracking |
 
 ## Limitaciones conocidas
@@ -47,6 +46,7 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 ## Decisiones tomadas
 
+- 2026-10-26: repo privado en GitHub (`Agusschenfelt/funke_tools-multitrack`). Se abre cuando la tool esté online, momento en que la AGPL obliga a publicar el código. `main` apunta al commit inicial; el trabajo está en ramas `feat/*` apiladas.
 - 2026-10-25: el Stage Pack recibe las secciones como entrada opcional (`sections.json`). Sin secciones, la guía solo trae la cuenta del count-in.
 - 2026-10-25: cues con Piper (`es_MX/ald` y `en_US/ljspeech`) ahora; voz rioplatense propia más adelante. Cambiarla es solo reemplazar archivos y el `manifest.json`.
 - 2026-10-25: detección de secciones con un pipeline propio sin pesos entrenados (segmentación de librosa más reglas para nombrar). Los nombres son sugerencias con nivel de confianza.
