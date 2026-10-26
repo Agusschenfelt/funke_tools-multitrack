@@ -1,0 +1,11 @@
+# Opt-in local debugging: publish Redis and Postgres on the host loopback only.
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d
+# Redis still requires REDIS_PASSWORD (redis-cli -a "$REDIS_PASSWORD"). Never use this file on a
+# shared or internet-facing host.
+services:
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"

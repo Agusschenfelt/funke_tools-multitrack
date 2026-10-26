@@ -1,17 +1,23 @@
-# Local stack: redis, postgres, api, cpu worker and a storage cleanup sidecar.
+# Local stack: redis, postgres, api and cpu worker.
 # Run from the repository root: docker compose -f infra/docker-compose.yml up --build
 # Variables come from infra/.env (copy infra/.env.example).
+# Only the API port is published. Redis and Postgres are reachable on the compose network only;
+# to inspect them from the host add the opt-in override infra/docker-compose.dev.yml.
+# Redis requires REDIS_PASSWORD (use URL-safe characters, e.g. `openssl rand -hex 24`).
 x-storage-env: &storage-env
   STORAGE_ROOT: /data
-  REDIS_URL: redis://redis:6379/0
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in infra/.env}@redis:6379/0
 
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # The worker runs whatever job a client queues, so Redis must not be open: require a password.
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in infra/.env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -22,8 +28,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,6 +44,7 @@ services:
       <<: *storage-env
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       SIGNING_SECRET: ${SIGNING_SECRET:?set SIGNING_SECRET in infra/.env}
+      ALLOW_INSECURE_SIGNING_SECRET: ${ALLOW_INSECURE_SIGNING_SECRET:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
       LOST_JOB_GRACE_SECONDS: ${LOST_JOB_GRACE_SECONDS:-300}
@@ -73,21 +78,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-
-  # Storage-side safety net: deletes song directories older than 24 h (see worker_cpu/cleanup.py).
-  cleanup:
-    build:
-      context: ..
-      dockerfile: workers/cpu/Dockerfile
-    environment:
-      <<: *storage-env
-      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
-    command:
-      - sh
-      - -c
-      - 'while true; do python -m worker_cpu.cleanup; sleep "$${CLEANUP_INTERVAL_SECONDS:-900}"; done'
-    volumes:
-      - storage:/data
 
 volumes:
   postgres_data:
