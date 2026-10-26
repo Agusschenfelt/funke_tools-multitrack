@@ -1,0 +1,19 @@
+# Build context is the repository root (api and worker both need packages/audio-core).
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+**/tests
+.git
+.atl
+odd
+docs
+infra
+scripts
+storage
+out
+node_modules
+.env
+.env.*

@@ -1,9 +1,20 @@
-# Local development services. The api and worker services are added in later features.
+# Local stack: redis, postgres, api, cpu worker and a storage cleanup sidecar.
+# Run from the repository root: docker compose -f infra/docker-compose.yml up --build
+# Variables come from infra/.env (copy infra/.env.example).
+x-storage-env: &storage-env
+  STORAGE_ROOT: /data
+  REDIS_URL: redis://redis:6379/0
+
 services:
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   postgres:
     image: postgres:16-alpine
@@ -15,6 +26,70 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      <<: *storage-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SIGNING_SECRET: ${SIGNING_SECRET:?set SIGNING_SECRET in infra/.env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
+      LOST_JOB_GRACE_SECONDS: ${LOST_JOB_GRACE_SECONDS:-300}
+    ports:
+      - "8000:8000"
+    volumes:
+      - storage:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/openapi.json', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker-cpu:
+    build:
+      context: ..
+      dockerfile: workers/cpu/Dockerfile
+    environment:
+      <<: *storage-env
+    # CUES_DIR is intentionally not set: the image ships assets/cues and audio-core finds it.
+    cpus: 2
+    volumes:
+      - storage:/data
+      - model_cache:/cache
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Storage-side safety net: deletes song directories older than 24 h (see worker_cpu/cleanup.py).
+  cleanup:
+    build:
+      context: ..
+      dockerfile: workers/cpu/Dockerfile
+    environment:
+      <<: *storage-env
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
+    command:
+      - sh
+      - -c
+      - 'while true; do python -m worker_cpu.cleanup; sleep "$${CLEANUP_INTERVAL_SECONDS:-900}"; done'
+    volumes:
+      - storage:/data
 
 volumes:
   postgres_data:
+  storage:
+  model_cache:
