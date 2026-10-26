@@ -16,13 +16,13 @@ def age(storage: LocalStorage, song_id: str, name: str, hours: float) -> None:
     os.utime(path, (stamp, stamp))
 
 
-def test_deletes_only_songs_older_than_24_hours(storage_root: Path) -> None:
+def test_deletes_only_songs_older_than_ttl_plus_orphan_grace(storage_root: Path) -> None:
     storage = LocalStorage(storage_root)
     for song_id in ("old", "fresh", "edge"):
         storage.put_bytes(song_id, "source.wav", b"x")
-    age(storage, "old", "source.wav", 25)
-    age(storage, "fresh", "source.wav", 1)
-    age(storage, "edge", "source.wav", 24)
+    age(storage, "old", "source.wav", 31)
+    age(storage, "fresh", "source.wav", 25)
+    age(storage, "edge", "source.wav", 30)
 
     deleted = cleanup.cleanup_job(now=NOW)
 
@@ -34,7 +34,7 @@ def test_later_artifacts_do_not_extend_a_songs_life(storage_root: Path) -> None:
     storage = LocalStorage(storage_root)
     storage.put_bytes("s1", "source.wav", b"x")
     storage.put_bytes("s1", "stems/drums.wav", b"x")
-    age(storage, "s1", "source.wav", 30)
+    age(storage, "s1", "source.wav", 40)
     age(storage, "s1", "stems/drums.wav", 2)
 
     assert cleanup.cleanup_job(now=NOW) == ["s1"]
@@ -54,7 +54,7 @@ def test_main_prints_deleted_ids(
     monkeypatch.setattr(cleanup.time, "time", lambda: NOW)
     cleanup.main()
     out = capsys.readouterr().out
-    assert "deleted 1 expired song(s)" in out
+    assert "deleted 1 orphaned song(s)" in out
     assert "s1" in out
 
 
@@ -93,5 +93,52 @@ def test_song_ttl_is_env_overridable_with_a_24_hour_default(
     monkeypatch.setenv("SONG_TTL_HOURS", "2")
     storage = LocalStorage(storage_root)
     storage.put_bytes("s1", "source.wav", b"x")
-    age(storage, "s1", "source.wav", 3)
+    age(storage, "s1", "source.wav", 9)
+    assert cleanup.cleanup_job(now=NOW) == ["s1"]
+    storage.put_bytes("s2", "source.wav", b"x")
+    age(storage, "s2", "source.wav", 7)  # past the 2 h TTL but inside the 6 h orphan grace
+    assert cleanup.cleanup_job(now=NOW) == []
+
+
+def test_a_song_within_the_api_expiry_window_is_never_touched(storage_root: Path) -> None:
+    """Between the TTL and TTL + grace the API sweep (and its in-flight deferral) owns the song."""
+    storage = LocalStorage(storage_root)
+    storage.put_bytes("s1", "source.wav", b"x")
+    age(storage, "s1", "source.wav", 27)
+
+    assert cleanup.cleanup_job(now=NOW) == []
+    assert [e.song_id for e in storage.list_songs()] == ["s1"]
+
+
+def test_a_fresh_job_lock_protects_an_old_song(storage_root: Path) -> None:
+    storage = LocalStorage(storage_root)
+    storage.put_bytes("busy", "source.wav", b"x")
+    storage.put_bytes("busy", "jobs/job-1.lock", b"")
+    storage.put_bytes("idle", "source.wav", b"x")
+    for song_id in ("busy", "idle"):
+        age(storage, song_id, "source.wav", 48)
+    age(storage, "busy", "jobs/job-1.lock", 1)
+
+    assert cleanup.cleanup_job(now=NOW) == ["idle"]
+    assert [e.song_id for e in storage.list_songs()] == ["busy"]
+
+
+def test_a_stale_job_lock_from_a_crashed_worker_does_not_protect_the_song(
+    storage_root: Path,
+) -> None:
+    storage = LocalStorage(storage_root)
+    storage.put_bytes("s1", "source.wav", b"x")
+    storage.put_bytes("s1", "jobs/job-1.lock", b"")
+    age(storage, "s1", "source.wav", 48)
+    age(storage, "s1", "jobs/job-1.lock", 7)
+
+    assert cleanup.cleanup_job(now=NOW) == ["s1"]
+
+
+def test_result_markers_are_not_locks(storage_root: Path) -> None:
+    storage = LocalStorage(storage_root)
+    storage.put_bytes("s1", "source.wav", b"x")
+    storage.put_bytes("s1", "jobs/job-1.json", b"{}")
+    age(storage, "s1", "source.wav", 48)
+
     assert cleanup.cleanup_job(now=NOW) == ["s1"]

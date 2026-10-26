@@ -206,3 +206,71 @@ def test_detection_failure_changes_no_file(
     with pytest.raises(RuntimeError, match="detector crashed"):
         jobs.analyze_job(song, overwrite_sections=True)
     assert {n: storage.get_bytes(song, n) for n in storage.list_names(song)} == before
+
+
+# --- job markers: lock while running, result marker once finished -----------------------------
+
+
+class _JobStub:
+    def __init__(self, job_id: str) -> None:
+        self.id = job_id
+        self.meta: dict = {}
+
+    def save_meta(self) -> None:
+        pass
+
+
+def test_tracked_job_holds_a_lock_while_running_and_leaves_a_result_marker(
+    storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-1"))
+    seen = {}
+
+    @jobs.tracked
+    def work(song_id: str) -> dict:
+        seen["lock"] = storage.exists(song_id, "jobs/job-1.lock")
+        seen["marker_during"] = storage.exists(song_id, "jobs/job-1.json")
+        return {"ok": True}
+
+    assert work("s1") == {"ok": True}
+    assert seen == {"lock": True, "marker_during": False}
+    assert not storage.exists("s1", "jobs/job-1.lock")
+    assert json.loads(storage.get_bytes("s1", "jobs/job-1.json")) == {"result": {"ok": True}}
+
+
+def test_failed_job_releases_its_lock_and_writes_no_result(
+    storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-2"))
+
+    @jobs.tracked
+    def work(song_id: str) -> None:
+        raise jobs.JobError("boom")
+
+    with pytest.raises(jobs.JobError):
+        work("s1")
+    assert storage.list_names("s1", "jobs/") == []
+
+
+def test_string_results_are_recorded_verbatim(
+    storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jobs, "get_current_job", lambda: _JobStub("job-3"))
+    jobs.tracked(lambda song_id: "Pack A.zip")("s1")
+    assert json.loads(storage.get_bytes("s1", "jobs/job-3.json")) == {"result": "Pack A.zip"}
+
+
+def test_no_markers_outside_an_rq_job(storage: LocalStorage) -> None:
+    jobs.tracked(lambda song_id: "x")("s1")
+    assert storage.list_names("s1") == []
+
+
+@requires_ffmpeg
+def test_real_rq_job_writes_a_result_marker_named_after_its_id(
+    song: str, storage: LocalStorage, fake_models: None, queue
+) -> None:
+    job = queue.enqueue(jobs.separate_job, song, job_id="job-real")
+    assert job.get_status() == JobStatus.FINISHED
+    marker = json.loads(storage.get_bytes(song, "jobs/job-real.json"))
+    assert marker["result"]["song_id"] == song
+    assert not storage.exists(song, "jobs/job-real.lock")

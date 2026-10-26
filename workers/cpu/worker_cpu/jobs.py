@@ -12,9 +12,17 @@ Stages:
   does not exist yet or when ``overwrite_sections=True`` is passed explicitly.
 * ``separate_job``: decoding, separating, saving, done.
 * ``stagepack_job``: loading, packing, saving, done.
+
+Every job also keeps two small markers in the song's storage (only when run by RQ, so the job id
+is known): ``jobs/<job_id>.lock`` while it runs (cleanup never deletes a song with a live lock) and
+``jobs/<job_id>.json`` with its return value once it succeeded. The API reads that result marker,
+and only that, to recover the outcome of a job RQ has forgotten.
 """
 
+import functools
+import json
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +39,8 @@ from rq import get_current_job
 from worker_cpu.config import cues_dir, get_storage
 from worker_cpu.storage import (
     ANALYSIS,
+    JOBS_PREFIX,
+    LOCK_SUFFIX,
     PACKS_PREFIX,
     SECTIONS,
     SECTIONS_DETECTED,
@@ -55,6 +65,33 @@ def set_stage(stage: str) -> None:
     job.save_meta()
 
 
+def tracked(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Lock the song while the job runs and record its result under ``jobs/<job_id>.json``.
+
+    The result marker is written after the artifacts and before the job returns, so a marker
+    proves its own job succeeded. Failed jobs write none. Outside an RQ job nothing is written.
+    """
+
+    @functools.wraps(func)
+    def wrapper(song_id: str, *args: Any, **kwargs: Any) -> Any:
+        job_id = getattr(get_current_job(), "id", None)
+        if not job_id:
+            return func(song_id, *args, **kwargs)
+        storage = get_storage()
+        lock = f"{JOBS_PREFIX}{job_id}{LOCK_SUFFIX}"
+        storage.put_bytes(song_id, lock, b"")
+        try:
+            result = func(song_id, *args, **kwargs)
+            storage.put_bytes(
+                song_id, f"{JOBS_PREFIX}{job_id}.json", json.dumps({"result": result}).encode()
+            )
+            return result
+        finally:
+            storage.delete(song_id, lock)
+
+    return wrapper
+
+
 def _source_name(storage: Storage, song_id: str) -> str:
     """The single stored ``source.<ext>`` file; none or several is an error."""
     names = [n for n in storage.list_names(song_id, SOURCE_PREFIX + ".") if "/" not in n]
@@ -72,6 +109,7 @@ def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, 
     return decode(local), name
 
 
+@tracked
 def analyze_job(
     song_id: str,
     *,
@@ -127,6 +165,7 @@ def analyze_job(
     }
 
 
+@tracked
 def separate_job(song_id: str, model: str = DEFAULT_MODEL, source_name: str | None = None) -> dict:
     """Separate the stored source into stems stored under ``stems/`` with ``stemset.json``."""
     storage = get_storage()
@@ -162,6 +201,7 @@ def _fetch_stems(storage: Storage, song_id: str, stems_dir: Path) -> StemSet:
     return stemset
 
 
+@tracked
 def stagepack_job(song_id: str, options: dict[str, Any]) -> str:
     """Build a Stage Pack from stored stems, analysis and sections; returns the ZIP name."""
     try:

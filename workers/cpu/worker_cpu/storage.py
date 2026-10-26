@@ -14,6 +14,8 @@ Well-known names:
   detector output (see ``analyze_job`` for who writes which).
 * ``stems/<stem>.wav`` plus ``stems/stemset.json``: separation output (``STEMS_PREFIX``).
 * ``packs/<name>.zip``: built Stage Packs (``PACKS_PREFIX``).
+* ``jobs/<job_id>.json``: what a finished job returned (the API reads it when RQ forgot the job);
+  ``jobs/<job_id>.lock``: present while that job runs (``JOBS_PREFIX``, ``LOCK_SUFFIX``).
 """
 
 import re
@@ -29,6 +31,8 @@ SECTIONS_DETECTED = "sections.detected.json"
 STEMSET = "stems/stemset.json"
 STEMS_PREFIX = "stems/"
 PACKS_PREFIX = "packs/"
+JOBS_PREFIX = "jobs/"
+LOCK_SUFFIX = ".lock"
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SAFE_PART = re.compile(r"^[^/\\\x00]+$")
@@ -43,6 +47,7 @@ class SongEntry:
     song_id: str
     modified: float  # POSIX seconds of the newest artifact
     created: float  # POSIX seconds of the oldest artifact (the upload); the expiry job uses this
+    lock_modified: float | None = None  # newest ``jobs/*.lock`` mtime: a job is (or was) running
 
 
 @runtime_checkable
@@ -59,6 +64,10 @@ class Storage(Protocol):
 
     def list_names(self, song_id: str, prefix: str = "") -> list[str]:
         """Names of a song's artifacts starting with ``prefix``, sorted."""
+        ...
+
+    def delete(self, song_id: str, name: str) -> None:
+        """Remove one artifact; a missing one is not an error."""
         ...
 
     def delete_song(self, song_id: str) -> None: ...
@@ -119,6 +128,9 @@ class LocalStorage:
         names = (p.relative_to(directory).as_posix() for p in directory.rglob("*") if p.is_file())
         return sorted(n for n in names if n.startswith(prefix))
 
+    def delete(self, song_id: str, name: str) -> None:
+        self._path(song_id, name).unlink(missing_ok=True)
+
     def delete_song(self, song_id: str) -> None:
         shutil.rmtree(self._song_dir(song_id), ignore_errors=True)
 
@@ -129,13 +141,20 @@ class LocalStorage:
         for directory in sorted(self.root.iterdir()):
             if not directory.is_dir() or not _SAFE_ID.match(directory.name):
                 continue
-            times = [p.stat().st_mtime for p in directory.rglob("*") if p.is_file()]
+            files = [p for p in directory.rglob("*") if p.is_file()]
+            times = [p.stat().st_mtime for p in files]
+            locks = [
+                p.stat().st_mtime
+                for p in files
+                if p.parent.name == JOBS_PREFIX.rstrip("/") and p.name.endswith(LOCK_SUFFIX)
+            ]
             fallback = directory.stat().st_mtime
             entries.append(
                 SongEntry(
                     directory.name,
                     modified=max(times) if times else fallback,
                     created=min(times) if times else fallback,
+                    lock_modified=max(locks) if locks else None,
                 )
             )
         return entries
