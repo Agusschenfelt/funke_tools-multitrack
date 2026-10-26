@@ -122,7 +122,7 @@ export interface StagePackOptions {
 
 /* --------------------------------------------------------------- errors */
 
-export type ApiErrorKind = "http" | "network" | "aborted";
+export type ApiErrorKind = "http" | "network" | "aborted" | "invalid";
 
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
@@ -142,6 +142,9 @@ export class ApiError extends Error {
 /** Human message (es-AR, voseo) for a failed request. */
 export function messageForStatus(kind: ApiErrorKind, status: number | null): string {
   if (kind === "aborted") return "Se canceló la subida.";
+  if (kind === "invalid") {
+    return "El servidor devolvió datos que no podemos usar. Probá de nuevo o analizá la canción otra vez.";
+  }
   if (kind === "network") {
     return "No hay conexión con el servidor. Revisá tu red y probá de nuevo.";
   }
@@ -217,11 +220,30 @@ async function request<T>(
     }
     throw new ApiError("network", null);
   }
-  const text = await response.text();
-  if (!response.ok) {
-    throw new ApiError("http", response.status, parseDetail(text));
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("aborted", null);
+    }
+    // The body broke mid-read: an error status keeps its own message, a success is a lost response.
+    if (!response.ok) throw new ApiError("http", response.status, errorDetail("", response));
+    throw new ApiError("network", null);
   }
-  return JSON.parse(text) as T;
+  if (!response.ok) {
+    throw new ApiError("http", response.status, errorDetail(text, response));
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError("invalid", response.status, "response body is not JSON");
+  }
+}
+
+/** The API's `detail` when the body has one; otherwise the HTTP status text (may be empty). */
+function errorDetail(body: string, response: Pick<Response, "statusText">): string | null {
+  return parseDetail(body) ?? (response.statusText || null);
 }
 
 export function getSong(songId: string, options: RequestOptions = {}): Promise<SongDetail> {

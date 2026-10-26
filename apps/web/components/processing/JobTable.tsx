@@ -35,10 +35,14 @@ export function JobTable({ rows }: { rows: RowView[] }) {
         {rows.map((row) => (
           <tr key={row.kind} className={styles.row} data-status={row.status}>
             <th scope="row">{TASK_LABEL[row.kind]}</th>
-            <td>{row.status === "untracked" ? "—" : stageLabel(row.stage)}</td>
+            <td>{row.status === "untracked" || row.status === "checking" ? "—" : stageLabel(row.stage)}</td>
             <td>
               <span className={styles.mark} aria-hidden="true" />
-              {row.status === "untracked" ? "Sin datos" : statusLabel(row.status)}
+              {row.status === "untracked"
+                ? "Sin datos"
+                : row.status === "checking"
+                  ? "Consultando…"
+                  : statusLabel(row.status)}
             </td>
             <td className={`${styles.num} mono`}>{formatElapsed(row.seconds)}</td>
           </tr>

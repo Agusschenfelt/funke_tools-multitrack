@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
-import { ApiError, describeError, startAnalyze, startSeparate, uploadSong, type JobCreated } from "@/lib/api";
+import { ApiError, describeError, startAnalyze, startSeparate, uploadSong } from "@/lib/api";
+import type { TrackedJobs } from "@/lib/processing";
+import { processingQuery, startMissingJobs } from "@/lib/startJobs";
 import { formatBytes } from "@/lib/format";
 import { ACCEPT, MAX_UPLOAD_MB, formatsLabel, validateFile } from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
@@ -13,7 +15,7 @@ type State =
   | { phase: "dragging" }
   | { phase: "uploading"; file: File; fraction: number }
   | { phase: "starting"; file: File }
-  | { phase: "error"; message: string; songId?: string; file?: File };
+  | { phase: "error"; message: string; songId?: string; file?: File; started?: TrackedJobs };
 
 export function UploadScreen() {
   const router = useRouter();
@@ -24,18 +26,19 @@ export function UploadScreen() {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const startJobs = useCallback(
-    async (songId: string, file: File) => {
+    async (songId: string, file: File, started: TrackedJobs = { analyze: null, separate: null }) => {
       setState({ phase: "starting", file });
-      let jobs: [JobCreated, JobCreated];
-      try {
-        jobs = await Promise.all([startAnalyze(songId, { sections: true }), startSeparate(songId)]);
-      } catch (error) {
-        setState({ phase: "error", message: describeError(error), songId, file });
+      // Only the jobs that are not running yet are enqueued, so a retry never duplicates one.
+      const { tracked, error } = await startMissingJobs(started, {
+        analyze: () => startAnalyze(songId, { sections: true }),
+        separate: () => startSeparate(songId),
+      });
+      if (error) {
+        setState({ phase: "error", message: describeError(error), songId, file, started: tracked });
         return;
       }
       // The processing view follows these ids; it keeps them in the URL so a reload still works.
-      const query = new URLSearchParams({ a: jobs[0].job_id, s: jobs[1].job_id });
-      router.push(`/temas/${songId}?${query.toString()}`);
+      router.push(`/temas/${songId}?${processingQuery(tracked)}`);
     },
     [router],
   );
@@ -161,7 +164,7 @@ export function UploadScreen() {
             <button
               type="button"
               className={styles.secondary}
-              onClick={() => void startJobs(state.songId!, state.file!)}
+              onClick={() => void startJobs(state.songId!, state.file!, state.started)}
             >
               Reintentar
             </button>

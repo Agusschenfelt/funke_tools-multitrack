@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   describeError,
@@ -29,6 +29,7 @@ import {
   type RowView,
   type TrackedJobs,
 } from "@/lib/processing";
+import { createRetryGate, withJob } from "@/lib/retryGate";
 import { readTracked, writeTracked } from "@/lib/trackedJobs";
 import { JobTable } from "./JobTable";
 import { useJob } from "./useJob";
@@ -120,18 +121,25 @@ function ProcessingBody({
   const [tracked, setTracked] = useState(initialTracked);
   const [now, setNow] = useState(() => Date.now());
   const [partial, setPartial] = useState<PartialData | null>(null);
-  const [retrying, setRetrying] = useState<RowKind | null>(null);
+  const [retrying, setRetrying] = useState<readonly RowKind[]>([]);
   const [retryError, setRetryError] = useState<string | null>(null);
 
   const analyzePoll = useJob(tracked.analyze);
   const separatePoll = useJob(tracked.separate);
 
-  const analyzeRow = rowView("analyze", analyzePoll.job, song.artifacts.analysis, now);
+  // Latest ids for retries that finish out of order; the gate drops results from superseded retries.
+  const trackedRef = useRef(initialTracked);
+  const [gate] = useState(createRetryGate);
+
+  // A tracked job with no answer yet (and not reported lost) is loading, not missing.
+  const analyzeRow = rowView("analyze", analyzePoll.job, song.artifacts.analysis, now,
+    Boolean(tracked.analyze) && !analyzePoll.lost);
   const separateRow = rowView(
     "separate",
     separatePoll.job,
     song.artifacts.stems.length > 0,
     now,
+    Boolean(tracked.separate) && !separatePoll.lost,
   );
   const rows = [analyzeRow, separateRow];
   const live = rows.some((row) => row.status === "queued" || row.status === "running");
@@ -178,21 +186,28 @@ function ProcessingBody({
 
   const restart = useCallback(
     async (kind: RowKind) => {
-      setRetrying(kind);
+      const ticket = gate.begin(kind);
+      setRetrying((list) => (list.includes(kind) ? list : [...list, kind]));
       setRetryError(null);
       try {
-        const created = kind === "analyze" ? await startAnalyze(songId, { sections: true }) : await startSeparate(songId);
-        const next = { ...tracked, [kind]: created.job_id };
+        const created =
+          kind === "analyze"
+            ? await startAnalyze(songId, { sections: true })
+            : await startSeparate(songId);
+        // A newer retry of this row won the race: its id stays.
+        if (!gate.isCurrent(kind, ticket)) return;
+        const next = withJob(trackedRef.current, kind, created.job_id);
+        trackedRef.current = next;
         setTracked(next);
         writeTracked(songId, next);
         setNow(Date.now());
       } catch (error) {
-        setRetryError(describeError(error));
+        if (gate.isCurrent(kind, ticket)) setRetryError(describeError(error));
       } finally {
-        setRetrying(null);
+        if (gate.isCurrent(kind, ticket)) setRetrying((list) => list.filter((k) => k !== kind));
       }
     },
-    [songId, tracked],
+    [songId, gate],
   );
 
   const announcement = rows
@@ -236,7 +251,7 @@ function ProcessingBody({
               <button
                 type="button"
                 className={styles.secondary}
-                disabled={retrying === row.kind}
+                disabled={retrying.includes(row.kind)}
                 onClick={() => void restart(row.kind)}
               >
                 {row.status === "failed" ? "Reintentar" : "Iniciar de nuevo"}
@@ -264,6 +279,7 @@ function ProcessingBody({
 
 function rowSpeech(row: RowView): string {
   if (row.status === "untracked") return "sin seguimiento";
+  if (row.status === "checking") return "consultando";
   if (row.status === "running") return `${statusLabel(row.status)}, ${stageLabel(row.stage)}`;
   return statusLabel(row.status);
 }

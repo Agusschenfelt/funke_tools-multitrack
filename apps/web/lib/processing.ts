@@ -159,20 +159,23 @@ export type RowKind = Exclude<JobKind, "stagepack">;
 
 export interface RowView {
   kind: RowKind;
-  status: JobStatus | "untracked";
+  /** "checking": a job id is tracked but its first poll has not answered yet. */
+  status: JobStatus | "untracked" | "checking";
   stage: string | null;
   seconds: number | null;
 }
 
 /**
  * One table row. A finished artifact wins over a missing or expired job; with neither a job nor
- * an artifact there is nothing to follow ("untracked").
+ * an artifact there is nothing to follow ("untracked"), unless a tracked job has not been polled
+ * yet ("checking"), which must not read as missing data.
  */
 export function rowView(
   kind: RowKind,
   job: JobOut | null,
   artifactReady: boolean,
   nowMs: number,
+  awaitingPoll = false,
 ): RowView {
   if (job) {
     return {
@@ -183,5 +186,6 @@ export function rowView(
     };
   }
   if (artifactReady) return { kind, status: "finished", stage: "done", seconds: null };
+  if (awaitingPoll) return { kind, status: "checking", stage: null, seconds: null };
   return { kind, status: "untracked", stage: null, seconds: null };
 }

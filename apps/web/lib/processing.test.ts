@@ -115,6 +115,8 @@ describe("job tracking", () => {
   it("lets an artifact stand in for a missing job", () => {
     expect(rowView("analyze", null, true, 0).status).toBe("finished");
     expect(rowView("separate", null, false, 0).status).toBe("untracked");
+    expect(rowView("separate", null, false, 0, true).status).toBe("checking");
+    expect(rowView("separate", null, true, 0, true).status).toBe("finished");
     expect(rowView("analyze", job(), true, Date.parse("2026-10-26T10:00:10Z")).status).toBe("running");
   });
 });

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, describeError, getJob, messageForStatus, parseDetail, uploadSong } from "./api";
+import {
+  ApiError,
+  describeError,
+  getJob,
+  messageForStatus,
+  parseDetail,
+  uploadSong,
+} from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -136,5 +143,36 @@ describe("uploadSong", () => {
     const promise = uploadSong(file, { signal: controller.signal });
     controller.abort();
     await expect(promise).rejects.toMatchObject({ kind: "aborted" });
+  });
+});
+
+describe("request error bodies", () => {
+  const stub = (response: Response) => vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+  it("falls back to the status text for an empty error body", async () => {
+    stub(new Response("", { status: 502, statusText: "Bad Gateway" }));
+    await expect(getJob("j1")).rejects.toMatchObject({ kind: "http", status: 502, detail: "Bad Gateway" });
+  });
+
+  it("does not throw on an HTML error page", async () => {
+    stub(new Response("<html>oops</html>", { status: 500, statusText: "Server Error" }));
+    await expect(getJob("j1")).rejects.toMatchObject({ kind: "http", status: 500, detail: "Server Error" });
+  });
+
+  it("keeps an ApiError when reading the error body fails", async () => {
+    const broken = { ok: false, status: 503, statusText: "Unavailable", text: () => Promise.reject(new TypeError("reset")) };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(broken));
+    await expect(getJob("j1")).rejects.toMatchObject({ kind: "http", status: 503, detail: "Unavailable" });
+  });
+
+  it("reports a lost success body as a network error", async () => {
+    const broken = { ok: true, status: 200, statusText: "OK", text: () => Promise.reject(new TypeError("reset")) };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(broken));
+    await expect(getJob("j1")).rejects.toMatchObject({ kind: "network" });
+  });
+
+  it("reports a non-JSON success body as invalid data", async () => {
+    stub(new Response("not json", { status: 200 }));
+    await expect(getJob("j1")).rejects.toMatchObject({ kind: "invalid" });
   });
 });
