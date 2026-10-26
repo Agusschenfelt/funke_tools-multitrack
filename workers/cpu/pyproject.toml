@@ -20,8 +20,16 @@ dev = [
     "fakeredis",
 ]
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
 audio-core = { path = "../../packages/audio-core", editable = true }
+# Linux resolves torch from the PyTorch CPU index (no CUDA/nvidia/triton wheels); macOS keeps PyPI.
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [build-system]
 requires = ["hatchling"]

@@ -95,14 +95,17 @@ the worker container. Later jobs and restarts reuse the cache.
 
 ### Image sizes (built on the Intel Mac)
 
-API 694 MB (no torch); worker-cpu 10.5 GB (see the caveat below).
+API 694 MB (no torch); worker-cpu 2.9 GB.
 
-### Image size caveat
+### CPU-only torch
 
-`workers/cpu/uv.lock` resolves Linux torch (2.14.x) and torchaudio from PyPI. Those Linux
-wheels pull the CUDA runtime packages (`nvidia-*`, `triton`), which adds several GB to the
-worker image even though it only runs on CPU. The torch version still satisfies the `>=2.6`
-CVE-2025-32434 floor.
+On Linux, `torch` and `torchaudio` resolve from the PyTorch CPU index
+(`https://download.pytorch.org/whl/cpu`) through `[[tool.uv.index]]` (`explicit = true`) and
+`[tool.uv.sources]` with a `sys_platform == 'linux'` marker, in both `packages/audio-core` and
+`workers/cpu` (uv only honors the sources of the project being locked). The lock has no `nvidia-*`
+or `triton` packages; this took the worker image from 10.5 GB to 2.9 GB. The torch version
+(2.14.1+cpu) still satisfies the `>=2.6` CVE-2025-32434 floor. Intel macOS still resolves PyPI
+torch 2.2.2.
 
 ## Status and follow-ups
 
@@ -110,11 +113,6 @@ CVE-2025-32434 floor.
   (`scripts/e2e_smoke.py`: upload, analyze with sections, edit sections, separate with
   `htdemucs_6s`, stage pack ZIP checks, negative checks). With Docker limited to 2 CPUs the
   separation of a 32 s song takes about 200 s (roughly 6 s per audio second); production needs a GPU.
-- Follow-up: CPU-only wheels. Add a `pytorch-cpu` index
-  (`https://download.pytorch.org/whl/cpu`, `explicit = true`) to the worker project and pin
-  `torch`/`torchaudio` to it with `tool.uv.sources` for Linux (marker
-  `sys_platform == 'linux'`), then re-lock. This needs a pyproject/lock change, so it was not
-  done here. The Intel macOS pin is unaffected.
 - Follow-up: pin the `ghcr.io/astral-sh/uv` image by digest.
 - Follow-up: bake the model weights into the image (or a pre-download step) so the first job does
   not spend minutes downloading them.
