@@ -4,6 +4,8 @@
 ``SIGNING_SECRET`` is missing); tests call ``create_app`` with explicit settings and doubles.
 """
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -11,6 +13,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.cleanup import cleanup_loop
 from api.config import Settings, cors_origins_from_env
 from api.db import make_engine, make_session_factory
 from api.deps import AppContext
@@ -46,7 +49,17 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings is None:
             app.state.ctx = build_context(Settings.from_env(), queue, clock)
-        yield
+        ctx = app.state.ctx
+        interval = ctx.settings.cleanup_interval_seconds
+        task = asyncio.create_task(cleanup_loop(ctx, interval)) if interval > 0 else None
+        app.state.cleanup_task = task
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(title="Multitrack API", version="0.1.0", lifespan=lifespan)
     if settings is not None:

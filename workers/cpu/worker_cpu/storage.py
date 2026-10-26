@@ -42,6 +42,7 @@ class StorageError(RuntimeError):
 class SongEntry:
     song_id: str
     modified: float  # POSIX seconds of the newest artifact
+    created: float  # POSIX seconds of the oldest artifact (the upload); the expiry job uses this
 
 
 @runtime_checkable
@@ -129,8 +130,13 @@ class LocalStorage:
             if not directory.is_dir() or not _SAFE_ID.match(directory.name):
                 continue
             times = [p.stat().st_mtime for p in directory.rglob("*") if p.is_file()]
+            fallback = directory.stat().st_mtime
             entries.append(
-                SongEntry(directory.name, max(times) if times else directory.stat().st_mtime)
+                SongEntry(
+                    directory.name,
+                    modified=max(times) if times else fallback,
+                    created=min(times) if times else fallback,
+                )
             )
         return entries
 
