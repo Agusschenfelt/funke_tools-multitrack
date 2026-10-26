@@ -66,6 +66,14 @@ export interface ArtifactLink {
   token_expires_at: string;
 }
 
+export interface Analysis {
+  source: string;
+  duration: number;
+  sample_rate: number;
+  grid: { bpm: number; time_signature: string } | null;
+  key: { key: string; mode: string; camelot: string } | null;
+}
+
 export interface Artifacts {
   analysis: boolean;
   sections: boolean;
@@ -246,6 +254,10 @@ export function startSeparate(
 
 export function getJob(jobId: string, options: RequestOptions = {}): Promise<JobOut> {
   return request<JobOut>(`/jobs/${encodeURIComponent(jobId)}`, options);
+}
+
+export function getAnalysis(songId: string, options: RequestOptions = {}): Promise<Analysis> {
+  return request<Analysis>(`/songs/${encodeURIComponent(songId)}/analysis`, options);
 }
 
 export function getSections(songId: string, options: RequestOptions = {}): Promise<SectionsOut> {

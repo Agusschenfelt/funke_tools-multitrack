@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
-import { ApiError, describeError, startAnalyze, startSeparate, uploadSong } from "@/lib/api";
+import { ApiError, describeError, startAnalyze, startSeparate, uploadSong, type JobCreated } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { ACCEPT, MAX_UPLOAD_MB, formatsLabel, validateFile } from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
@@ -26,13 +26,16 @@ export function UploadScreen() {
   const startJobs = useCallback(
     async (songId: string, file: File) => {
       setState({ phase: "starting", file });
+      let jobs: [JobCreated, JobCreated];
       try {
-        await Promise.all([startAnalyze(songId, { sections: true }), startSeparate(songId)]);
+        jobs = await Promise.all([startAnalyze(songId, { sections: true }), startSeparate(songId)]);
       } catch (error) {
         setState({ phase: "error", message: describeError(error), songId, file });
         return;
       }
-      router.push(`/temas/${songId}`);
+      // The processing view follows these ids; it keeps them in the URL so a reload still works.
+      const query = new URLSearchParams({ a: jobs[0].job_id, s: jobs[1].job_id });
+      router.push(`/temas/${songId}?${query.toString()}`);
     },
     [router],
   );

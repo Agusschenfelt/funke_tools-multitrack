@@ -1,0 +1,83 @@
+.table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.colTask { width: 27%; }
+.colStage { width: 30%; }
+.colStatus { width: 25%; }
+.colTime { width: 18%; }
+
+.table th,
+.table td {
+  padding: var(--space-3) var(--space-2) var(--space-3) 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: baseline;
+  overflow-wrap: anywhere;
+}
+
+.table thead th {
+  color: var(--paper-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+}
+
+.table tbody th {
+  font-weight: 700;
+}
+
+.table .num {
+  padding-right: 0;
+  text-align: right;
+}
+
+.mark {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: var(--space-2);
+  border: 1px solid var(--graphite);
+  vertical-align: baseline;
+}
+
+.row[data-status="running"] .mark {
+  border-color: var(--orange);
+  background: var(--orange);
+}
+
+.row[data-status="finished"] .mark {
+  border-color: var(--paper);
+  background: var(--paper);
+}
+
+.row[data-status="failed"] .mark {
+  border-color: var(--error);
+  background: var(--error);
+}
+
+.row[data-status="failed"] td {
+  color: var(--error);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .row[data-status="running"] .mark {
+    animation: tick 1.2s steps(1, end) infinite;
+  }
+}
+
+@keyframes tick {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (min-width: 40rem) {
+  .table {
+    font-size: var(--text-base);
+  }
+}
