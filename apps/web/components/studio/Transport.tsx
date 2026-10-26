@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import type { CueLanguage, EngineState, StudioEngine } from "@/lib/audio/engine";
-import { barPosition, formatBarBeat, formatClock } from "@/lib/audio/grid";
+import { barPosition, COUNT_IN_LABEL, formatBarBeat, formatClock } from "@/lib/audio/grid";
 import type { StripGroup } from "@/lib/strip";
 import { useFrame } from "./hooks";
 import { Minimap } from "./Minimap";
@@ -50,9 +50,13 @@ export function Transport({
   const apply = useCallback(
     (position: number) => {
       if (barRef.current) {
-        barRef.current.textContent = hasGrid
+        const text = hasGrid
           ? formatBarBeat(barPosition(position, beats, downbeats, perBar))
           : "—";
+        barRef.current.textContent = text;
+        // The word "Cuenta" is set smaller than the bar:beat numerals so it fits the same slot.
+        if (text === COUNT_IN_LABEL) barRef.current.dataset.word = "";
+        else delete barRef.current.dataset.word;
       }
       if (clockRef.current) clockRef.current.textContent = formatClock(position);
     },
@@ -87,7 +91,8 @@ export function Transport({
             —
           </span>
           <span className={`${styles.clock} mono`}>
-            <span ref={clockRef}>0:00</span> / {formatClock(duration)}
+            <span ref={clockRef}>0:00</span>
+            <span className={styles.total}> / {formatClock(duration)}</span>
           </span>
         </p>
 
@@ -116,8 +121,8 @@ export function Transport({
             value={state.cueLanguage}
             onChange={(event) => engine.setCueLanguage(event.target.value as CueLanguage)}
           >
-            <option value="es">Español</option>
-            <option value="en">English</option>
+            <option value="es">ES</option>
+            <option value="en">EN</option>
           </select>
         </div>
       </div>

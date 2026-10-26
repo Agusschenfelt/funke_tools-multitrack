@@ -5,10 +5,9 @@
   font-size: var(--text-sm);
 }
 
-.colTask { width: 27%; }
-.colStage { width: 30%; }
-.colStatus { width: 25%; }
-.colTime { width: 18%; }
+.colTask { width: 32%; }
+.colStatus { width: 46%; }
+.colTime { width: 22%; }
 
 .table th,
 .table td {

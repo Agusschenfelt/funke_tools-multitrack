@@ -70,6 +70,53 @@
   margin-top: var(--space-3);
 }
 
+/* Segmented: one connected row of equal 44px targets; the native radios keep arrow-key behavior. */
+.segmented {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(7rem, 1fr);
+  gap: 0;
+}
+
+.segmented .choiceRow {
+  min-width: 0;
+}
+
+.segmented .choice + .choice,
+.segmented .choiceRow + .choiceRow {
+  margin-left: -1px;
+}
+
+.segmented .choiceBox {
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  text-align: center;
+}
+
+.segmented .choiceRow:first-child .choiceBox {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.segmented .choiceRow:last-child .choiceBox {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.segmented .choiceRow:has(input:checked) {
+  position: relative;
+  z-index: 1;
+}
+
+.segmented .choice input:checked + .choiceBox {
+  border-color: var(--paper);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.segmented .choice input:checked + .choiceBox .choiceLabel::before {
+  display: none;
+}
+
 .choiceRow {
   display: flex;
   align-items: stretch;
@@ -260,6 +307,12 @@
   font-size: var(--text-sm);
 }
 
+.packNote {
+  max-width: var(--measure);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
 .action {
   display: grid;
   gap: var(--space-3);
@@ -350,5 +403,34 @@
   .primary {
     width: auto;
     min-width: 14rem;
+  }
+
+  .side {
+    position: sticky;
+    top: var(--space-5);
+  }
+}
+
+/* Phone: the main action stays pinned to the bottom of the screen. */
+@media (max-width: 55.99rem) {
+  .page {
+    padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .action {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: var(--space-3) var(--gutter) max(var(--space-3), env(safe-area-inset-bottom));
+    border-top: 1px solid var(--rule);
+    background: var(--ink-raised);
+  }
+
+  .status {
+    min-height: 0;
   }
 }

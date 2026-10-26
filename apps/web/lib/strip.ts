@@ -146,7 +146,7 @@ export function barTicks(
   return ticks;
 }
 
-/** Display title from an upload filename: no extension, underscores read as spaces. */
+/** Display title from an upload filename: the original name and case, without the extension. */
 export function titleFromFilename(filename: string): string {
-  return filename.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/_+/g, " ").trim() || filename;
+  return filename.replace(/\.[a-z0-9]{1,5}$/i, "").trim() || filename;
 }

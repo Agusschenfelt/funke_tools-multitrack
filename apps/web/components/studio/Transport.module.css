@@ -4,6 +4,9 @@
   bottom: 0;
   left: 0;
   z-index: 10;
+  box-sizing: border-box;
+  /* Studio reserves exactly this much room at the bottom of the page. */
+  height: calc(var(--transport-h) + env(safe-area-inset-bottom, 0px));
   padding: var(--space-3) var(--gutter) max(var(--space-3), env(safe-area-inset-bottom));
   border-top: 1px solid var(--rule);
   background: var(--ink-raised);
@@ -14,7 +17,7 @@
   height: 1.5rem;
   max-width: 90rem;
   margin: 0 auto var(--space-3);
-  background: var(--ink-lifted);
+  background: var(--ink);
   cursor: pointer;
 }
 
@@ -26,8 +29,9 @@
   pointer-events: none;
 }
 
+/* The section under the playhead is a neutral span; orange stays with the playhead. */
 .mapActive {
-  background: color-mix(in srgb, var(--orange) 40%, transparent);
+  background: var(--ink-lifted);
 }
 
 .controls {
@@ -82,6 +86,16 @@
   line-height: 1;
 }
 
+.total {
+  color: inherit;
+}
+
+.bars[data-word] {
+  font-size: var(--text-base);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .clock {
   color: var(--paper-dim);
   white-space: nowrap;
@@ -130,29 +144,44 @@
 }
 
 .note {
-  max-width: 90rem;
-  margin: var(--space-2) auto 0;
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  padding: var(--space-1) var(--gutter);
+  background: var(--ink-raised);
   color: var(--paper-dim);
   font-size: var(--text-sm);
 }
 
 @media (max-width: 47.99rem) {
-  .minimap {
-    height: 1.75rem;
+  .transport {
+    padding-top: var(--space-2);
+    padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
   }
 
+  .minimap {
+    height: 1.5rem;
+    margin-bottom: var(--space-2);
+  }
+
+  /* One row: play, position, then click, cues and language. */
   .controls {
-    flex-wrap: wrap;
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-3);
   }
 
   .play {
-    width: 4rem;
-    height: 4rem;
+    width: 3.25rem;
+    height: 3.25rem;
   }
 
   .bars {
-    font-size: 2.25rem;
+    min-width: 4ch;
+    font-size: 1.75rem;
+  }
+
+  .bars[data-word] {
+    font-size: var(--text-sm);
   }
 
   .readout {
@@ -160,16 +189,23 @@
     gap: var(--space-1);
   }
 
+  .clock {
+    font-size: var(--text-sm);
+  }
+
+  .total {
+    display: none;
+  }
+
   .toggles {
-    flex: 1 1 100%;
-    margin-left: 0;
+    gap: var(--space-1);
   }
 
   .toggle {
-    flex: 1;
+    padding: 0 var(--space-3);
   }
 
   .language {
-    flex: none;
+    padding: 0 var(--space-2);
   }
 }

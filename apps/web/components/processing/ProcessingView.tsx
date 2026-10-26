@@ -31,6 +31,7 @@ import {
 } from "@/lib/processing";
 import { createRetryGate, withJob } from "@/lib/retryGate";
 import { readTracked, writeTracked } from "@/lib/trackedJobs";
+import { titleFromFilename } from "@/lib/strip";
 import { JobTable } from "./JobTable";
 import { useJob } from "./useJob";
 import styles from "./ProcessingView.module.css";
@@ -216,7 +217,7 @@ function ProcessingBody({
 
   return (
     <>
-      <h1 className={styles.title}>{song.filename}</h1>
+      <h1 className={styles.title}>{titleFromFilename(song.filename)}</h1>
 
       <section aria-labelledby="cola-titulo" className={styles.block}>
         <h2 id="cola-titulo" className={styles.heading}>
@@ -266,7 +267,7 @@ function ProcessingBody({
         )}
       </section>
 
-      {partial && <PartialResult partial={partial} />}
+      {partial && <PartialResult partial={partial} running={!allDone} />}
 
       {allDone && (
         <Link href={`/temas/${songId}/estudio`} className={styles.primary}>
@@ -284,14 +285,14 @@ function rowSpeech(row: RowView): string {
   return statusLabel(row.status);
 }
 
-function PartialResult({ partial }: { partial: PartialData }) {
+function PartialResult({ partial, running }: { partial: PartialData; running: boolean }) {
   const { analysis, sections } = partial;
   const bpm = analysis.grid ? analysis.grid.bpm.toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
   const summary = sectionsSummary(sections);
   return (
     <section aria-labelledby="parcial-titulo" className={styles.block}>
       <h2 id="parcial-titulo" className={styles.heading}>
-        Resultado parcial
+        {running ? "Resultado parcial" : "Resultado"}
       </h2>
       <dl className={styles.facts}>
         {analysis.key && (

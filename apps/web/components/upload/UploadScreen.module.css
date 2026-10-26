@@ -37,10 +37,15 @@
   background: var(--ink-lifted);
 }
 
+/* The bar ruler runs the full width of the drop zone; the copy and buttons keep a readable measure. */
 .idle,
 .progress {
   display: grid;
   gap: var(--space-4);
+}
+
+.idle > :not(:first-child),
+.progress > :not(:nth-child(2)) {
   max-width: 40rem;
 }
 

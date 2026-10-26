@@ -72,15 +72,18 @@ function pickupBeat(time: number, beats: readonly number[], firstDownbeat: numbe
   return -Math.max(1, downbeatIndex - (reached - 1));
 }
 
+/** Shown before bar 1: a pickup reads as a count-in, not as a negative beat. */
+export const COUNT_IN_LABEL = "Cuenta";
+
 /**
  * Readout for the transport. Bars and beats count from 1 (`12:3`). Before the first downbeat
- * (the pickup, or anacrusis) the beats are counted down to it: `1:−2` is two beats before bar 1,
- * `1:−1` is the beat just before it, the way a musician counts "two, one, ONE". Before the first
- * beat there is nothing to count, so it reads `—`.
+ * (the pickup, or anacrusis) it reads `Cuenta`: the model still counts beats down to bar 1, but
+ * a negative beat looks like an error to anyone who is not a musician. Before the first beat
+ * there is nothing to count, so it reads `—`.
  */
 export function formatBarBeat({ bar, beat }: BarBeat): string {
   if (bar > 0) return `${bar}:${beat}`;
-  return beat < 0 ? `1:\u2212${-beat}` : "\u2014";
+  return beat < 0 ? COUNT_IN_LABEL : "\u2014";
 }
 
 /** `m:ss` (floored, never negative). */

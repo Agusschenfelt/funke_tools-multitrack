@@ -71,7 +71,7 @@ describe("barTicks", () => {
 
 describe("titleFromFilename", () => {
   it("drops the extension", () => {
-    expect(titleFromFilename("mi_tema.final.mp3")).toBe("mi tema.final");
+    expect(titleFromFilename("Mi_Tema.final.mp3")).toBe("Mi_Tema.final");
     expect(titleFromFilename("t.wav")).toBe("t");
   });
 });

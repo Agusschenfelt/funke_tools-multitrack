@@ -19,6 +19,7 @@ function Radios<T extends string | number>({
   onChange,
   describedBy,
   extra,
+  segmented,
 }: {
   name: string;
   value: T;
@@ -26,9 +27,11 @@ function Radios<T extends string | number>({
   onChange: (value: T) => void;
   describedBy: string;
   extra?: (choice: Choice<T>) => ReactNode;
+  /** Two short options read best side by side as one segmented control. */
+  segmented?: boolean;
 }) {
   return (
-    <div className={styles.choices}>
+    <div className={segmented ? `${styles.choices} ${styles.segmented}` : styles.choices}>
       {choices.map((choice) => (
         <div key={String(choice.value)} className={styles.choiceRow}>
           <label className={styles.choice} data-disabled={choice.disabled || undefined}>
@@ -151,6 +154,7 @@ export function OptionsForm({
       <Group id="h-count" legend="Cuenta previa" hint="Compases de click antes de que empiece la canción.">
         <Radios
           name="count"
+          segmented
           value={options.countInBars}
           describedBy="h-count"
           onChange={(countInBars) => onChange({ countInBars })}
@@ -192,6 +196,7 @@ export function OptionsForm({
       <Group id="h-sub" legend="Subdivisión" hint="Negras: un click por tiempo. Corcheas: se suma un click suave entre tiempos.">
         <Radios
           name="sub"
+          segmented
           value={options.subdivision}
           describedBy="h-sub"
           onChange={(subdivision) => onChange({ subdivision })}
@@ -213,6 +218,7 @@ export function OptionsForm({
       <Group id="h-rate" legend="Frecuencia" hint="Los WAV salen a 24 bits. Usá la frecuencia de tu proyecto.">
         <Radios
           name="rate"
+          segmented
           value={options.sampleRate}
           describedBy="h-rate"
           onChange={(sampleRate) => onChange({ sampleRate })}
@@ -234,6 +240,7 @@ export function OptionsForm({
       <Group id="h-lang" legend="Idioma de las cues" hint="La voz de la guía que anuncia las secciones, y el idioma de las notas de importación.">
         <Radios
           name="lang"
+          segmented
           value={options.language}
           describedBy="h-lang"
           onChange={(language) => onChange({ language })}

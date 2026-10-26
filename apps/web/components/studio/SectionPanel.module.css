@@ -1,7 +1,7 @@
 .panel {
   display: grid;
-  gap: var(--space-4);
-  padding: var(--space-4) 0;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--rule);
 }
 
@@ -9,19 +9,43 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3) var(--space-4);
+  gap: var(--space-2) var(--space-2);
 }
 
-.history {
-  display: flex;
-  gap: var(--space-2);
+/* Undo, redo and save sit together; the status line takes the rest of the row. */
+.save {
+  margin-left: var(--space-2);
 }
 
 .message {
   flex: 1 1 14rem;
   min-width: 0;
+  margin-left: var(--space-2);
   color: var(--paper-dim);
   font-size: var(--text-sm);
+}
+
+.message:empty {
+  display: none;
+}
+
+.hintWide {
+  max-width: var(--measure);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.hintNarrow {
+  display: none;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.hintNarrow summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  cursor: pointer;
 }
 
 .failed {
@@ -77,9 +101,32 @@
   background: var(--ink-lifted);
 }
 
+/* Opens over the lanes from the zero-height slot under the strip. */
+.sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  max-height: calc(100vh - var(--transport-h) - 8rem);
+  overflow-y: auto;
+  border: 1px solid var(--graphite);
+  border-top: 0;
+  background: var(--ink-raised);
+  box-shadow: 0 0.75rem 1.5rem rgb(0 0 0 / 0.45);
+}
+
 .editor {
   display: grid;
   gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.sheetHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
 }
 
 .heading {
@@ -134,17 +181,30 @@
 }
 
 @media (max-width: 47.99rem) {
+  /* One compact row: Deshacer, Rehacer, Guardar share the width. */
   .bar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    padding: var(--space-2) 0;
-    background: var(--ink);
+    flex-wrap: wrap;
   }
 
-  .save {
+  .bar .button,
+  .bar .save {
+    flex: 1 1 0;
+    min-height: var(--touch);
+    margin-left: 0;
+    padding: 0 var(--space-2);
+  }
+
+  .message {
     flex: 1 1 100%;
-    min-height: 3.25rem;
+    margin-left: 0;
+  }
+
+  .hintWide {
+    display: none;
+  }
+
+  .hintNarrow {
+    display: block;
   }
 
   .fields {

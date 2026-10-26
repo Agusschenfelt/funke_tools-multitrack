@@ -195,6 +195,9 @@ function ExportBody({
         <OptionsForm options={options} disabled={building} onChange={change} />
         <div className={styles.side}>
           <PackPreview zip={zip ?? "Sin grilla de tiempo"} files={files} detail={detail} />
+          <p className={styles.packNote}>
+            El archivo se llama igual en cada pack de este tema: renombrá el anterior para no pisarlo.
+          </p>
 
           <div className={styles.action}>
             {run.phase === "idle" && run.problem && (

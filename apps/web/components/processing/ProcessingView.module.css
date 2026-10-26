@@ -9,7 +9,6 @@
   font-size: clamp(1.5rem, 1rem + 2.5vw, 2.5rem);
   font-weight: 800;
   line-height: 1.1;
-  text-transform: uppercase;
   overflow-wrap: anywhere;
 }
 

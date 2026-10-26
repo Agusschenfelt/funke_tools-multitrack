@@ -55,9 +55,21 @@
   font-size: var(--text-sm);
 }
 
+/* The active section carries a 2px orange bracket at the top of the strip. */
 .active {
   color: var(--orange);
-  box-shadow: inset 0 2px 0 var(--orange);
+}
+
+.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0.5rem;
+  border: 2px solid var(--orange);
+  border-bottom: 0;
+  pointer-events: none;
 }
 
 .active .sign,
@@ -65,11 +77,11 @@
   color: inherit;
 }
 
-/* The selected section: a frame, apart from the orange top mark that follows the playhead. */
+/* The chosen section for editing: a neutral frame, apart from the orange active bracket. */
 .selected {
   background: var(--ink-raised);
-  outline: 2px solid var(--orange);
-  outline-offset: -2px;
+  outline: 1px solid var(--paper);
+  outline-offset: -1px;
 }
 
 /* A weak or missing detected label: plain words, no alarm colour beyond the warning tone. */

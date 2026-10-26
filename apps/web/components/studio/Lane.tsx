@@ -101,7 +101,7 @@ export function Lane({
         <Waveform peaks={view.peaks} quiet={!audible} />
         {activeSpan && duration > 0 && (
           <span
-            className={styles.tint}
+            className={styles.mark}
             aria-hidden="true"
             style={{
               left: `${(activeSpan.start / duration) * 100}%`,

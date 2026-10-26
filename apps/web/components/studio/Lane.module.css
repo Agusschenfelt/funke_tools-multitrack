@@ -128,11 +128,14 @@
   opacity: 0.28;
 }
 
-.tint {
+/* The active section is bounded by its two edge lines, not filled. */
+.mark {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--orange),
+    inset -1px 0 0 var(--orange);
   pointer-events: none;
 }
 
@@ -184,7 +187,7 @@
   .lane {
     flex: 0 0 100%;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 9rem;
+    grid-template-rows: auto minmax(8.75rem, 1fr);
     scroll-snap-align: start;
     scroll-snap-stop: always;
     border-bottom: 0;

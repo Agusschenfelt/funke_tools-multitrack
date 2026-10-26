@@ -27,18 +27,18 @@ describe("barPosition", () => {
     expect(at(2.5)).toBe("2:1");
     expect(at(3.1)).toBe("2:2");
   });
-  it("counts the pickup down to the first downbeat", () => {
+  it("reads the pickup as a count-in until the first downbeat", () => {
     // Beats at 0 and 0.5, first downbeat at 0.5: one beat of pickup.
-    expect(at(0)).toBe("1:\u22121");
-    expect(at(0.2)).toBe("1:\u22121");
-    expect(at(0.49)).toBe("1:\u22121");
+    expect(at(0)).toBe("Cuenta");
+    expect(at(0.2)).toBe("Cuenta");
+    expect(at(0.49)).toBe("Cuenta");
   });
-  it("counts a longer pickup", () => {
+  it("keeps reading the count-in through a longer pickup", () => {
     const late = [1.5];
     const grid = (t: number) => formatBarBeat(barPosition(t, beats, late, 4));
-    expect(grid(0)).toBe("1:\u22123");
-    expect(grid(0.5)).toBe("1:\u22122");
-    expect(grid(1.0)).toBe("1:\u22121");
+    expect(grid(0)).toBe("Cuenta");
+    expect(grid(0.5)).toBe("Cuenta");
+    expect(grid(1.0)).toBe("Cuenta");
     expect(grid(1.5)).toBe("1:1");
   });
   it("shows a dash before the first beat, and never 0:1", () => {

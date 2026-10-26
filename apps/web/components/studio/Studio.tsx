@@ -20,7 +20,7 @@ import { orderStems } from "@/lib/audio/stems";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
 import { Lane } from "./Lane";
-import { SectionPanel } from "./SectionPanel";
+import { SectionEditor, SectionToolbar } from "./SectionPanel";
 import { SectionStrip } from "./SectionStrip";
 import { SongBar } from "./SongBar";
 import { Transport } from "./Transport";
@@ -304,10 +304,8 @@ function StudioStage({
       </p>
 
       <div className={styles.stage}>
-        <SectionPanel
-          sections={sections}
-          selected={editor.selected}
-          downbeats={downbeats}
+        <SectionToolbar
+          sectionCount={sections.length}
           dirty={editor.dirty}
           saving={editor.saving}
           status={editor.status}
@@ -316,11 +314,6 @@ function StudioStage({
           onUndo={editor.undo}
           onRedo={editor.redo}
           onSave={editor.save}
-          onRename={editor.rename}
-          onSplit={() => editor.split(engine.getPosition())}
-          onMerge={editor.merge}
-          onNudge={editor.nudge}
-          onPlay={playSection}
         />
         <SectionStrip
           engine={engine}
@@ -335,6 +328,21 @@ function StudioStage({
           onMove={editor.move}
           onNudge={editor.nudge}
         />
+        <div className={styles.slot}>
+          {editor.selected !== null && (
+            <SectionEditor
+              sections={sections}
+              selected={editor.selected}
+              downbeats={downbeats}
+              onRename={editor.rename}
+              onSplit={() => editor.split(engine.getPosition())}
+              onMerge={editor.merge}
+              onNudge={editor.nudge}
+              onPlay={playSection}
+              onClose={() => editor.select(null)}
+            />
+          )}
+        </div>
         <div className={lanes.lanes}>
           {names.map((name, index) => (
             <Lane
