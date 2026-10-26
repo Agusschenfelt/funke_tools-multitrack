@@ -10,11 +10,13 @@ tool.example.com {
 	encode zstd gzip
 
 	# API under /api; the prefix is stripped before it reaches FastAPI.
-	# Body cap = MAX_UPLOAD_MB (100) plus ~2 MB of multipart overhead.
+	# Body cap = MAX_UPLOAD_MB (100) plus ~2 MiB of multipart overhead. The API counts MiB
+	# (MAX_UPLOAD_MB * 1024 * 1024) and Caddy's `MB` is decimal (1,000,000), so write `MiB` here:
+	# 102MB would reject files the API accepts (about 102 to 104.8 million bytes).
 	handle /api/* {
 		uri strip_prefix /api
 		request_body {
-			max_size 102MB
+			max_size 102MiB
 		}
 		reverse_proxy multitrack-api:8000 {
 			# Separation jobs are async, but uploads of 100 MB on slow links need generous timeouts.
@@ -38,7 +40,7 @@ tool.example.com {
 # }
 # api.example.com {
 # 	request_body {
-# 		max_size 102MB
+# 		max_size 102MiB
 # 	}
 # 	reverse_proxy multitrack-api:8000
 # }

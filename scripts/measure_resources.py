@@ -52,9 +52,14 @@ MIB = 1024 * 1024
 def make_stereo_song(seconds: float, seed: int) -> np.ndarray:
     """Stereo float32 song of at least ``seconds`` seconds (whole bars)."""
     total_bars = sum(count for _, count in LONG_STRUCTURE)
+    # make_song reads the module-level STRUCTURE; swap it only for these two calls and restore it.
+    original = smoke.STRUCTURE
     smoke.STRUCTURE = LONG_STRUCTURE
-    left = smoke.make_song(seed)
-    right = smoke.make_song(seed + 1)
+    try:
+        left = smoke.make_song(seed)
+        right = smoke.make_song(seed + 1)
+    finally:
+        smoke.STRUCTURE = original
     song = np.stack([left, right], axis=1)
     want = int(seconds * smoke.SAMPLE_RATE)
     if len(song) < want:

@@ -31,14 +31,26 @@ services:
   redis:
     <<: *common
     image: redis:7-alpine
-    # RQ keeps queue state in Redis: noeviction makes writes fail loudly instead of dropping jobs.
+    # RQ keeps queue state in Redis. Durability: AOF with fsync every second (volume redis_data), so
+    # queued jobs survive a restart (at most ~1 s of enqueues is lost). noeviction makes writes
+    # fail loudly instead of dropping jobs. maxmemory is 64mb of the 128m container limit so an
+    # AOF rewrite (fork + buffers) cannot push the container into the OOM killer.
+    # The password goes into a config file (mode 600, in the container's /tmp), never into argv,
+    # so it does not show in `ps` or /proc/<pid>/cmdline. The image's /data is owned by uid 999,
+    # and a new named volume inherits that ownership, so redis runs unprivileged.
+    user: "999:1000"
     command:
       - sh
       - -c
-      - exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 96mb --maxmemory-policy noeviction --save "" --appendonly no
+      - |
+        umask 077
+        printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /tmp/redis.conf
+        exec redis-server /tmp/redis.conf --dir /data --maxmemory 64mb --maxmemory-policy noeviction --save "" --appendonly yes --appendfsync everysec
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
     networks: [internal]
     mem_limit: 128m
     memswap_limit: 128m
@@ -127,8 +139,10 @@ services:
     pids_limit: 256
     depends_on:
       redis: {condition: service_healthy}
-    # Graceful stop lets RQ finish bookkeeping; a running separation is not worth waiting for.
-    stop_grace_period: 30s
+    # SIGTERM makes RQ do a warm shutdown: it stops taking jobs and lets the running one finish.
+    # A 4-minute separation takes ~15 min and the longest job timeout is 60 min, so the grace
+    # period must be long or Docker SIGKILLs the job mid-way. Drain first anyway (README, "Update").
+    stop_grace_period: 30m
 
   mt-web:
     <<: *common
@@ -164,6 +178,7 @@ networks:
     external: true
 
 volumes:
+  redis_data:
   postgres_data:
   storage:
   model_cache:
