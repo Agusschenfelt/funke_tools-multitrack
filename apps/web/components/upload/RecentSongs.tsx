@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ApiError, getSong } from "@/lib/api";
+import { getSong } from "@/lib/api";
 import { formatAgo, formatTimeLeft } from "@/lib/format";
 import {
   markGone,
@@ -13,9 +13,12 @@ import {
   visibleRecent,
   type RecentSong,
 } from "@/lib/recentSongs";
+import { isGoneError, statusAfterLookup } from "@/lib/recentVerification";
 import styles from "./RecentSongs.module.css";
 
 /** Songs this browser uploaded and that have not expired; each is checked against the API once. */
+const CLOCK_TICK_MS = 30_000;
+
 export function RecentSongs() {
   const [entries, setEntries] = useState<RecentSong[] | null>(null);
   const [nowMs, setNowMs] = useState(0);
@@ -34,20 +37,22 @@ export function RecentSongs() {
       for (const entry of visibleRecent(stored, start)) {
         getSong(entry.id, { signal: controller.signal })
           .then((song) => {
-            const ready = song.artifacts.analysis && song.artifacts.stems.length > 0;
-            if (ready && entry.status !== "ready") {
-              setEntries(updateRecent(entry.id, { status: "ready" }, Date.now()));
-            }
+            const status = statusAfterLookup(song, entry.status);
+            if (status) setEntries(updateRecent(entry.id, { status }, Date.now()));
           })
           .catch((error: unknown) => {
-            if (error instanceof ApiError && error.kind === "http" && [404, 410].includes(error.status ?? 0)) {
-              setEntries(markGone(entry.id, Date.now()));
-            }
+            if (isGoneError(error)) setEntries(markGone(entry.id, Date.now()));
             // Any other failure says nothing about the song: keep it as it was.
           });
       }
     });
     return () => controller.abort();
+  }, []);
+
+  // "hace X" and "quedan X" must not freeze while the tab stays open.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), CLOCK_TICK_MS);
+    return () => window.clearInterval(timer);
   }, []);
 
   const shown = entries ? visibleRecent(entries, nowMs) : [];

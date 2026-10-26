@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from "react"
 import { ApiError, describeError, startAnalyze, startSeparate, uploadSong } from "@/lib/api";
 import type { TrackedJobs } from "@/lib/processing";
 import { rememberSong, updateRecent } from "@/lib/recentSongs";
+import { recentFromUpload } from "@/lib/recentVerification";
 import { processingQuery, startMissingJobs } from "@/lib/startJobs";
 import { formatBytes } from "@/lib/format";
 import { ACCEPT, MAX_UPLOAD_MB, formatsLabel, validateFile } from "@/lib/upload";
@@ -61,15 +62,8 @@ export function UploadScreen() {
           signal: controller.signal,
           onProgress: (fraction) => setState({ phase: "uploading", file, fraction }),
         });
-        rememberSong(
-          {
-            id: song.id,
-            filename: song.filename,
-            createdAt: Date.parse(song.created_at),
-            expiresAt: Date.parse(song.expires_at),
-          },
-          Date.now(),
-        );
+        const now = Date.now();
+        rememberSong(recentFromUpload(song, now), now);
         await startJobs(song.id, file);
       } catch (error) {
         if (error instanceof ApiError && error.kind === "aborted") {
