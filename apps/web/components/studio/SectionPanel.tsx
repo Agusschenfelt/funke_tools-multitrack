@@ -113,8 +113,9 @@ export function SectionToolbar({
 }
 
 /**
- * The selected section's name, label and structure actions. It opens as a sheet over the lanes
- * (anchored under the strip), so selecting a section never moves the waveforms. Escape closes it.
+ * The selected section's name, label and structure actions. On desktop it is a single-row bar
+ * overlaying a thin band under the strip; on a phone it is a bottom sheet above the transport.
+ * Either way selecting a section never moves the waveforms. Escape closes it.
  */
 export function SectionEditor({
   sections,
@@ -146,13 +147,13 @@ export function SectionEditor({
             {sectionLabel(section)}
             {startBar !== null && <span className={`${styles.where} mono`}>desde el compás {startBar}</span>}
           </h2>
-          <button type="button" className={styles.button} onClick={onClose}>
+          <button type="button" className={`${styles.button} ${styles.close}`} onClick={onClose}>
             Cerrar
           </button>
         </div>
         <div className={styles.fields}>
           <label className={styles.field}>
-            <span>Nombre</span>
+            <span className={styles.fieldName}>Nombre</span>
             <select
               className={styles.input}
               value={section.name}
@@ -168,7 +169,7 @@ export function SectionEditor({
             </select>
           </label>
           <label className={styles.field}>
-            <span>Etiqueta propia (opcional)</span>
+            <span className={styles.fieldName}>Etiqueta propia (opcional)</span>
             <LabelField
               key={`${selected}-${section.label ?? ""}`}
               value={section.label ?? ""}
@@ -183,37 +184,47 @@ export function SectionEditor({
           <button
             type="button"
             className={styles.button}
+            aria-label="Inicio de la sección, un compás antes"
             disabled={!hasGrid || selected === 0}
             onClick={() => onNudge(selected, -1)}
           >
-            Inicio −1 compás
+            −1 compás
           </button>
           <button
             type="button"
             className={styles.button}
+            aria-label="Inicio de la sección, un compás después"
             disabled={!hasGrid || selected === 0}
             onClick={() => onNudge(selected, 1)}
           >
-            Inicio +1 compás
-          </button>
-          <button type="button" className={styles.button} disabled={!hasGrid} onClick={onSplit}>
-            Dividir en el cursor
+            +1 compás
           </button>
           <button
             type="button"
             className={styles.button}
+            aria-label="Dividir en el cursor"
+            disabled={!hasGrid}
+            onClick={onSplit}
+          >
+            Dividir
+          </button>
+          <button
+            type="button"
+            className={styles.button}
+            aria-label="Unir con la anterior"
             disabled={selected === 0}
             onClick={() => onMerge(selected, "prev")}
           >
-            Unir con la anterior
+            Unir ←
           </button>
           <button
             type="button"
             className={styles.button}
+            aria-label="Unir con la siguiente"
             disabled={selected >= sections.length - 1}
             onClick={() => onMerge(selected, "next")}
           >
-            Unir con la siguiente
+            Unir →
           </button>
         </div>
         {!hasGrid && (

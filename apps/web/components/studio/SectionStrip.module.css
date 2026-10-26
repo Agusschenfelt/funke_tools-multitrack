@@ -55,11 +55,7 @@
   font-size: var(--text-sm);
 }
 
-/* The active section carries a 2px orange bracket at the top of the strip. */
-.active {
-  color: var(--orange);
-}
-
+/* The active section carries a 2px orange bracket at the top of the strip; its text stays paper. */
 .active::before {
   content: "";
   position: absolute;
@@ -70,11 +66,6 @@
   border: 2px solid var(--orange);
   border-bottom: 0;
   pointer-events: none;
-}
-
-.active .sign,
-.active .times {
-  color: inherit;
 }
 
 /* The chosen section for editing: a neutral frame, apart from the orange active bracket. */
