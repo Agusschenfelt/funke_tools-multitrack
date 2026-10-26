@@ -50,15 +50,15 @@ def make_link(ctx: AppContext, song: Song, name: str) -> ArtifactLink:
 def pack_stored_name(ctx: AppContext, job: Job, filename: str) -> str | None:
     """Stored object of a finished stagepack job, or None when it is not in storage.
 
-    Packs live at ``packs/<job_id>/<filename>``; a flat ``packs/<filename>`` is the legacy layout.
+    Only this job's own ``packs/<job_id>/<filename>`` counts. A flat ``packs/<filename>`` (the
+    pre-per-job layout) is deliberately not a fallback: it cannot be tied to a job, so it could be
+    another job's pack of the same name.
     """
-    for name in (names.pack_object_name(job.id, filename), f"{names.PACKS_PREFIX}{filename}"):
-        try:
-            if ctx.storage.exists(job.song_id, name):
-                return name
-        except names.StorageError:
-            return None
-    return None
+    name = names.pack_object_name(job.id, filename)
+    try:
+        return name if ctx.storage.exists(job.song_id, name) else None
+    except names.StorageError:
+        return None
 
 
 def artifacts_of(session: Session, ctx: AppContext, song: Song) -> Artifacts:

@@ -355,6 +355,40 @@ def test_lost_stagepack_never_adopts_another_jobs_pack(client, queue, store, clo
     with client.app.state.ctx.session_factory() as session:
         names = {p.job_id: p.filename for p in session.query(Pack)}
     assert names == {done: "Pack B.zip", lost: None}
+    assert ok["download_url"] is not None
+    assert client.get(f"/jobs/{lost}").json()["download_url"] is None
+
+
+def test_lost_stagepack_ignores_packs_that_merely_sit_in_its_own_directory(
+    client, queue, store, clock, settings, song
+):
+    """Without a marker the job did not complete, even if a file with a plausible name exists."""
+    put_analysis_and_stems(store, song["id"])
+    lost = stagepack(client, song["id"])
+    store.put_bytes(song["id"], f"packs/{lost}/Half Written.zip", b"partial")
+    store.put_bytes(song["id"], "packs/Half Written.zip", b"legacy")
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    body = client.get(f"/jobs/{lost}").json()
+    assert body["status"] == "failed"
+    assert body["download_url"] is None
+    with client.app.state.ctx.session_factory() as session:
+        assert session.query(Pack).one().filename is None
+
+
+def test_finished_stagepack_never_serves_a_flat_legacy_pack_of_the_same_name(
+    client, queue, store, clock, settings, song
+):
+    """The job's own object is gone; a flat `packs/<name>.zip` may belong to anyone else."""
+    put_analysis_and_stems(store, song["id"])
+    job_id = stagepack(client, song["id"])
+    write_marker(store, song["id"], job_id, "Same Name.zip")
+    store.put_bytes(song["id"], "packs/Same Name.zip", b"someone else's pack")
+    clock.advance(seconds=settings.lost_job_grace_seconds)
+
+    body = client.get(f"/jobs/{job_id}").json()
+    assert body["status"] == "finished"
+    assert body["download_url"] is None
 
 
 def test_rerun_whose_old_artifact_exists_is_not_mistaken_for_finished(
