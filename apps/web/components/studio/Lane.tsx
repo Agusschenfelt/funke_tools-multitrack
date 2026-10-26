@@ -37,6 +37,9 @@ function loadingText(view: StemView): string | null {
     return view.loaded > 0 ? `Descargando ${formatBytes(view.loaded)}` : "Descargando…";
   }
   if (view.phase === "decoding") return "Decodificando…";
+  if (view.phase === "error") {
+    return view.failure === "decode" ? "No se pudo leer esta pista" : "No se pudo descargar esta pista";
+  }
   return "En espera";
 }
 

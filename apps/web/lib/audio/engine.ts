@@ -24,7 +24,15 @@ import {
   type ClickEvent,
   type CuePlacement,
 } from "./schedule";
+import {
+  decodeStemBytes,
+  fetchStemBytes,
+  loadStems,
+  type LoadFailure,
+} from "./stemLoad";
 import { STEM_ORDER, type StemName, type StemSource } from "./stems";
+
+export type { LoadFailure } from "./stemLoad";
 
 const CONTEXT_RATE = 44100;
 const LOOKAHEAD = 0.3;
@@ -33,8 +41,7 @@ const START_DELAY = 0.06;
 const DOWNLOADS_AT_ONCE = 3;
 const GAIN_SMOOTHING = 0.01;
 
-export type StemPhase = "pending" | "downloading" | "decoding" | "ready";
-export type LoadFailure = "expired" | "network" | "decode";
+export type StemPhase = "pending" | "downloading" | "decoding" | "ready" | "error";
 export type CueLanguage = "es" | "en";
 
 export interface StemView {
@@ -42,6 +49,8 @@ export interface StemView {
   /** Bytes received so far (the API does not expose Content-Length cross-origin). */
   loaded: number;
   peaks: Peaks | null;
+  /** Why this stem failed; the other stems keep loading. */
+  failure: LoadFailure | null;
 }
 
 export interface EngineState {
@@ -80,17 +89,9 @@ interface Run {
   lastCue: GainNode | null;
 }
 
-class StemLoadError extends Error {
-  readonly failure: LoadFailure;
-  constructor(failure: LoadFailure) {
-    super(failure);
-    this.failure = failure;
-  }
-}
-
 function emptyStems(): Record<StemName, StemView> {
   const out = {} as Record<StemName, StemView>;
-  for (const name of STEM_ORDER) out[name] = { phase: "pending", loaded: 0, peaks: null };
+  for (const name of STEM_ORDER) out[name] = { phase: "pending", loaded: 0, peaks: null, failure: null };
   return out;
 }
 
@@ -125,53 +126,6 @@ function stop(node: AudioBufferSourceNode) {
   node.disconnect();
 }
 
-async function readBytes(
-  response: Response,
-  onProgress: (loaded: number) => void,
-): Promise<Uint8Array> {
-  const total = Number(response.headers.get("content-length")) || 0;
-  const reader = response.body?.getReader();
-  if (!reader) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    onProgress(bytes.length);
-    return bytes;
-  }
-  // With a known size, write chunks straight into one buffer; otherwise join them once at the end.
-  let target = total > 0 ? new Uint8Array(total) : null;
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (target && received + value.length <= target.length) target.set(value, received);
-    else {
-      if (target) {
-        chunks.push(target.subarray(0, received));
-        target = null;
-      }
-      chunks.push(value);
-    }
-    received += value.length;
-    onProgress(received);
-  }
-  if (target) return received === target.length ? target : target.subarray(0, received);
-  const joined = new Uint8Array(received);
-  let at = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, at);
-    at += chunk.length;
-  }
-  return joined;
-}
-
-async function pool<T>(items: readonly T[], size: number, work: (item: T) => Promise<void>) {
-  let next = 0;
-  const lanes = Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (next < items.length) await work(items[next++]);
-  });
-  await Promise.all(lanes);
-}
-
 export class StudioEngine {
   private state: EngineState = initialState();
   private readonly serverState: EngineState = initialState();
@@ -192,6 +146,7 @@ export class StudioEngine {
   private loadAbort: AbortController | null = null;
   private playToken = 0;
   private cueToken = 0;
+  private disposed = false;
 
   /* ------------------------------------------------------------ store */
 
@@ -205,6 +160,7 @@ export class StudioEngine {
   readonly getServerSnapshot = (): EngineState => this.serverState;
 
   private set(patch: Partial<EngineState>) {
+    if (this.disposed) return;
     this.state = { ...this.state, ...patch };
     for (const listener of this.listeners) listener();
   }
@@ -242,65 +198,78 @@ export class StudioEngine {
     this.timeline = timeline;
   }
 
+  /**
+   * Loads every stem. Calling it again (or while playing) first stops playback and drops the
+   * previous buffers and gain nodes, so no source from the old song keeps sounding. A stem that
+   * fails reports its own error and the others continue; the engine ends in `error` if any failed.
+   * Never rejects.
+   */
   async load(sources: readonly StemSource[], signal: AbortSignal): Promise<void> {
+    if (this.disposed) return;
     this.loadAbort?.abort();
     const abort = new AbortController();
     this.loadAbort = abort;
     const onAbort = () => abort.abort();
-    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) abort.abort();
+    else signal.addEventListener("abort", onAbort, { once: true });
 
-    const ctx = this.ensureContext();
-    this.buffers.clear();
+    this.resetForLoad();
+    let ctx: AudioContext;
+    try {
+      ctx = this.ensureContext();
+    } catch {
+      signal.removeEventListener("abort", onAbort);
+      this.set({ status: "error", failure: "unsupported" });
+      return;
+    }
     this.set({
       status: "loading",
       failure: null,
       order: sources.map((s) => s.name),
       stems: emptyStems(),
+      playing: false,
+      duration: 0,
     });
 
     try {
-      await pool(sources, DOWNLOADS_AT_ONCE, async (source) => {
-        if (abort.signal.aborted) return;
-        await this.loadStem(ctx, source, abort.signal);
-      });
-      if (abort.signal.aborted) return;
+      const failures = await loadStems(
+        sources,
+        DOWNLOADS_AT_ONCE,
+        abort.signal,
+        (source) => this.loadStem(ctx, source, abort.signal),
+        (name, failure) => this.setStem(name, { phase: "error", failure }),
+      );
+      if (abort.signal.aborted || this.loadAbort !== abort) return;
+      const failed = sources.find((s) => failures[s.name]);
+      if (failed) {
+        this.set({ status: "error", failure: failures[failed.name] ?? "network" });
+        return;
+      }
       let duration = 0;
       for (const buffer of this.buffers.values()) duration = Math.max(duration, buffer.duration);
       this.applyGains();
       this.set({ status: "ready", duration });
-    } catch (error) {
-      abort.abort();
-      if (signal.aborted || this.loadAbort !== abort) return;
-      this.set({
-        status: "error",
-        failure: error instanceof StemLoadError ? error.failure : "network",
-      });
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
   }
 
+  /** Stops whatever is sounding and forgets the previous song's audio graph. */
+  private resetForLoad() {
+    this.playToken += 1;
+    this.stopRun();
+    for (const node of this.stemNodes.values()) node.disconnect();
+    this.stemNodes.clear();
+    this.buffers.clear();
+    this.pausedAt = 0;
+  }
+
   private async loadStem(ctx: AudioContext, { name, url }: StemSource, signal: AbortSignal) {
-    this.setStem(name, { phase: "downloading", loaded: 0 });
-    let bytes: Uint8Array;
-    try {
-      const response = await fetch(url, { signal });
-      if (!response.ok) {
-        throw new StemLoadError(response.status >= 400 && response.status < 500 ? "expired" : "network");
-      }
-      bytes = await readBytes(response, (loaded) => this.setStem(name, { loaded }));
-    } catch (error) {
-      if (error instanceof StemLoadError) throw error;
-      throw new StemLoadError("network");
-    }
+    this.setStem(name, { phase: "downloading", loaded: 0, failure: null });
+    const bytes = await fetchStemBytes(url, signal, (loaded) => this.setStem(name, { loaded }));
     if (signal.aborted) return;
     this.setStem(name, { phase: "decoding" });
-    let buffer: AudioBuffer;
-    try {
-      buffer = await ctx.decodeAudioData(bytes.buffer as ArrayBuffer);
-    } catch {
-      throw new StemLoadError("decode");
-    }
+    const buffer = await decodeStemBytes((data) => ctx.decodeAudioData(data), bytes);
     if (signal.aborted) return;
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
       buffer.getChannelData(i),
@@ -328,7 +297,7 @@ export class StudioEngine {
   };
 
   async play(): Promise<void> {
-    if (this.state.status !== "ready" || this.state.playing) return;
+    if (this.disposed || this.state.status !== "ready" || this.state.playing) return;
     const token = ++this.playToken;
     const ctx = this.ensureContext();
     try {
@@ -336,7 +305,7 @@ export class StudioEngine {
     } catch {
       return;
     }
-    if (token !== this.playToken || this.state.playing) return;
+    if (this.disposed || token !== this.playToken || this.state.playing) return;
     const from = this.pausedAt >= this.state.duration - 0.05 ? 0 : this.pausedAt;
     this.startRun(ctx, from);
     this.set({ playing: true });
@@ -397,7 +366,7 @@ export class StudioEngine {
 
   private readonly tick = () => {
     const { run, ctx } = this;
-    if (!run || !ctx) return;
+    if (this.disposed || !run || !ctx) return;
     if (this.getPosition() >= this.state.duration) {
       this.pausedAt = this.state.duration;
       this.stopRun();
@@ -506,6 +475,7 @@ export class StudioEngine {
       this.set({ cuesStatus: "ready" });
       return;
     }
+    if (this.disposed) return;
     const ctx = this.ensureContext();
     const token = ++this.cueToken;
     this.set({ cuesStatus: "loading" });
@@ -533,7 +503,9 @@ export class StudioEngine {
 
   /* --------------------------------------------------------- teardown */
 
+  /** Final: every later call is a no-op. Create a new engine per mount instead of reusing one. */
   dispose() {
+    this.disposed = true;
     this.loadAbort?.abort();
     this.loadAbort = null;
     this.playToken += 1;
