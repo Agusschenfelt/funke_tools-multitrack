@@ -6,6 +6,8 @@
 # - Nothing publishes a port. Only mt-web and mt-api join the Caddy network (external, name in
 #   CADDY_NETWORK); Caddy reaches them by container name.
 # - multitrack_internal is `internal: true` (no outbound route): redis, postgres, api, worker.
+# - Every service name is prefixed `mt-`: mt-api joins the shared Caddy network, and Docker DNS there
+#   resolves bare names like `postgres` or `redis` to OTHER stacks' containers too (seen on the VPS).
 # - The worker also joins multitrack_egress (plain bridge) ONLY so it can download model weights
 #   on the first job; after the cache volume is warm you can drop that network (see README).
 # - Services that join the shared Caddy network are named mt-web / mt-api on purpose: compose adds
@@ -25,10 +27,10 @@ x-common: &common
 
 x-env: &app-env
   STORAGE_ROOT: /data
-  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@mt-redis:6379/0
 
 services:
-  redis:
+  mt-redis:
     <<: *common
     image: redis:7-alpine
     # RQ keeps queue state in Redis. Durability: AOF with fsync every second (volume redis_data), so
@@ -63,7 +65,7 @@ services:
       timeout: 3s
       retries: 10
 
-  postgres:
+  mt-postgres:
     <<: *common
     image: postgres:16-alpine
     environment:
@@ -94,7 +96,7 @@ services:
     image: multitrack-api:prod
     environment:
       <<: *app-env
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@mt-postgres:5432/${POSTGRES_DB}
       SIGNING_SECRET: ${SIGNING_SECRET:?set SIGNING_SECRET (openssl rand -hex 32)}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
@@ -109,8 +111,8 @@ services:
     cpu_shares: 256
     pids_limit: 128
     depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
+      mt-postgres: {condition: service_healthy}
+      mt-redis: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/openapi.json', timeout=3)"]
       interval: 15s
@@ -138,7 +140,7 @@ services:
     memswap_limit: 3500m
     pids_limit: 256
     depends_on:
-      redis: {condition: service_healthy}
+      mt-redis: {condition: service_healthy}
     # SIGTERM makes RQ do a warm shutdown: it stops taking jobs and lets the running one finish.
     # A 4-minute separation takes ~15 min and the longest job timeout is 60 min, so the grace
     # period must be long or Docker SIGKILLs the job mid-way. Drain first anyway (README, "Update").
