@@ -70,7 +70,6 @@ export function packFiles(
 
 /** Server `sanitize_filename`: unsafe characters become spaces, runs collapse, max 120 chars. */
 export function sanitizeFilename(text: string): string {
-  // eslint-disable-next-line no-control-regex
   const cleaned = text.replace(/[<>:"/\\|?*\x00-\x1f]/g, " ").replace(/\s+/g, " ");
   return trimDotsSpaces(trimDotsSpaces(cleaned).slice(0, 120));
 }

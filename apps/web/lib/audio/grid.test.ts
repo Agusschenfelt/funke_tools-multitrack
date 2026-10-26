@@ -47,6 +47,12 @@ describe("barPosition", () => {
     expect(formatBarBeat(barPosition(0.2, [], [], 4))).toBe("\u2014");
     expect(at(0)).not.toBe("0:1");
   });
+  it("reads a dash, never a count-in, when the grid has beats but no downbeats", () => {
+    for (const t of [0, 0.7, 5]) {
+      expect(barPosition(t, beats, [], 4)).toEqual({ bar: 0, beat: 0 });
+      expect(formatBarBeat(barPosition(t, beats, [], 4))).toBe("\u2014");
+    }
+  });
   it("reports bar 0 with a negative beat in the model", () => {
     expect(barPosition(0.2, beats, downbeats, 4)).toEqual({ bar: 0, beat: -1 });
   });

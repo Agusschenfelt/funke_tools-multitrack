@@ -6,8 +6,9 @@
   z-index: 10;
   box-sizing: border-box;
   /* Studio reserves exactly this much room at the bottom of the page. */
-  height: calc(var(--transport-h) + env(safe-area-inset-bottom, 0px));
-  padding: var(--space-3) var(--gutter) max(var(--space-3), env(safe-area-inset-bottom));
+  /* A minimum, not a fixed height: the 1px border or a taller control grows it instead of overflowing. */
+  min-height: calc(var(--transport-h) + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--rule);
   background: var(--ink-raised);
 }
@@ -157,7 +158,7 @@
 @media (max-width: 47.99rem) {
   .transport {
     padding-top: var(--space-2);
-    padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
   }
 
   .minimap {

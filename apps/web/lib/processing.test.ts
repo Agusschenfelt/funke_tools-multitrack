@@ -119,4 +119,11 @@ describe("job tracking", () => {
     expect(rowView("separate", null, true, 0, true).status).toBe("finished");
     expect(rowView("analyze", job(), true, Date.parse("2026-10-26T10:00:10Z")).status).toBe("running");
   });
+  it("leaves checking as soon as a job answers, an artifact exists or the job is lost", () => {
+    expect(rowView("analyze", job({ status: "queued" }), false, 0, true).status).toBe("queued");
+    expect(rowView("analyze", job({ status: "failed" }), false, 0, true).status).toBe("failed");
+    expect(rowView("separate", null, true, 0, true).status).toBe("finished");
+    // A lost job (404) is reported as "not awaiting" by the caller: nothing left to follow.
+    expect(rowView("separate", null, false, 0, false).status).toBe("untracked");
+  });
 });

@@ -283,8 +283,14 @@ function useNow(active: boolean): number {
   const [now, setNow] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
+    // Resync on start: a stale value from a previous run would show the wrong elapsed time.
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const id = setInterval(tick, 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
   }, [active]);
   return now;
 }

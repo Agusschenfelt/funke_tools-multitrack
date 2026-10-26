@@ -16,12 +16,9 @@ import {
   undo,
   type EditResult,
 } from "@/lib/sections/edit";
+import { statusAfterEdit, type SaveStatus } from "@/lib/sections/saveStatus";
 
-export type SaveStatus =
-  | { phase: "idle" }
-  | { phase: "saving" }
-  | { phase: "saved" }
-  | { phase: "error"; message: string };
+export type { SaveStatus };
 
 interface Baseline {
   sections: readonly Section[];
@@ -56,11 +53,18 @@ export function useSectionEditor({ songId, initial, source, edited, downbeats }:
     if (!result) return;
     setHistory((h) => commit(h, result.sections));
     setSelected(result.index);
-    setStatus((s) => (s.phase === "saving" ? s : { phase: "idle" }));
+    setStatus(statusAfterEdit);
   }, []);
 
-  const doUndo = useCallback(() => setHistory(undo), []);
-  const doRedo = useCallback(() => setHistory(redo), []);
+  // Undo and redo change the sections too: a stale "Guardado" or error must not outlive them.
+  const doUndo = useCallback(() => {
+    setHistory(undo);
+    setStatus(statusAfterEdit);
+  }, []);
+  const doRedo = useCallback(() => {
+    setHistory(redo);
+    setStatus(statusAfterEdit);
+  }, []);
 
   const actions = {
     move: (index: number, time: number) => apply(moveBoundary(sections, index, time, downbeats)),
@@ -105,11 +109,12 @@ export function useSectionEditor({ songId, initial, source, edited, downbeats }:
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable='true']")) return;
       event.preventDefault();
-      setHistory(event.shiftKey ? redo : undo);
+      if (event.shiftKey) doRedo();
+      else doUndo();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [doUndo, doRedo]);
 
   return {
     sections,

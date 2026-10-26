@@ -411,20 +411,23 @@
   }
 }
 
-/* Phone: the main action stays pinned to the bottom of the screen. */
+/*
+ * Phone: the main action stays pinned to the bottom of the screen. It is sticky, not fixed, so it
+ * takes its own room in the flow and can never cover content, whatever it holds (a problem, a
+ * hint). `display: contents` lifts it out of `.side` so it sticks across the whole layout.
+ */
 @media (max-width: 55.99rem) {
-  .page {
-    padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px));
+  .side {
+    display: contents;
   }
 
   .action {
-    position: fixed;
-    right: 0;
+    position: sticky;
     bottom: 0;
-    left: 0;
     z-index: 10;
     max-height: 60vh;
     overflow-y: auto;
+    margin: 0 calc(-1 * var(--gutter));
     padding: var(--space-3) var(--gutter) max(var(--space-3), env(safe-area-inset-bottom));
     border-top: 1px solid var(--rule);
     background: var(--ink-raised);
