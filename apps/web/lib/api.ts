@@ -78,7 +78,17 @@ export interface Analysis {
     /** Beats before this time (seconds) are estimated over a beatless intro; absent when detected. */
     extrapolated_until?: number | null;
   } | null;
-  key: { key: string; mode: string; camelot: string } | null;
+  key: {
+    key: string;
+    mode: string;
+    camelot: string;
+    /** 0-1 strength of the estimate; absent in older analyses. */
+    confidence?: number | null;
+    /** A second plausible key, present only when the estimate is doubtful. */
+    alternative?: { key: string; mode: string; camelot: string } | null;
+  } | null;
+  /** Beat-aligned chord segments; absent when the analysis had no chord detection. */
+  chords?: { start: number; end: number; label: string }[] | null;
 }
 
 export interface Artifacts {

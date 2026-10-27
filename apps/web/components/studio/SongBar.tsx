@@ -2,7 +2,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Analysis } from "@/lib/api";
 import { exportBlockedBy } from "@/lib/export/flow";
-import { keyModeLabel } from "@/lib/processing";
+import { keyLabel } from "@/lib/chords";
 import styles from "./Studio.module.css";
 
 /** Title, key and tempo in chord-sheet mono, and the way out to the export. */
@@ -27,15 +27,21 @@ export function SongBar({
   const bpm = analysis.grid
     ? analysis.grid.bpm.toLocaleString("es-AR", { maximumFractionDigits: 1 })
     : null;
+  const key = analysis.key ? keyLabel(analysis.key) : null;
   return (
     <>
       <header className={styles.songBar}>
         <h1 className={styles.title}>{title}</h1>
         <p className={styles.facts}>
-          {analysis.key && (
-            <span className={styles.fact}>
-              <span className="mono">{analysis.key.key}</span>{" "}
-              <span className={styles.mode}>{keyModeLabel(analysis.key.mode)}</span>
+          {key && (
+            <span className={styles.fact} title={key.tooltip ?? undefined}>
+              <span className="mono">{key.note}</span> <span className={styles.mode}>{key.mode}</span>
+              {key.alternative && (
+                <span className={styles.alternative}>
+                  {" "}
+                  (o {key.alternative})
+                </span>
+              )}
             </span>
           )}
           {bpm && (

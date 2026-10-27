@@ -1,0 +1,62 @@
+/* Chord chips under the stem lanes. Hidden on a phone: there the transport shows the current chord. */
+.lane {
+  display: grid;
+  grid-template-columns: var(--lane-head) minmax(0, 1fr);
+  min-height: 3rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.name {
+  align-self: center;
+  margin: 0;
+  padding-right: var(--space-4);
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.track {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.chip {
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 var(--space-1);
+  overflow: hidden;
+  border-left: 1px solid var(--graphite);
+  color: var(--paper-dim);
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-overflow: clip;
+}
+
+/* The chord under the playhead: a neutral raised chip with a paper frame; orange stays with the playhead. */
+.current {
+  background: var(--ink-lifted);
+  outline: 1px solid var(--paper);
+  outline-offset: -1px;
+  color: var(--paper);
+}
+
+@media (max-width: 47.99rem) {
+  .lane {
+    display: none;
+  }
+}

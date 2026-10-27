@@ -18,6 +18,9 @@ interface TransportProps {
   duration: number;
   activeGroup: number | null;
   hasGrid: boolean;
+  /** Chord under the playhead and the one after it; null without chords. */
+  currentChord?: string | null;
+  nextChord?: string | null;
 }
 
 function PlayIcon({ playing }: { playing: boolean }) {
@@ -42,6 +45,8 @@ export function Transport({
   duration,
   activeGroup,
   hasGrid,
+  currentChord = null,
+  nextChord = null,
 }: TransportProps) {
   const barRef = useRef<HTMLSpanElement>(null);
   const clockRef = useRef<HTMLSpanElement>(null);
@@ -91,9 +96,22 @@ export function Transport({
           <span ref={barRef} className={`${styles.bars} mono`}>
             —
           </span>
-          <span className={`${styles.clock} mono`}>
-            <span ref={clockRef}>0:00</span>
-            <span className={styles.total}> / {formatClock(duration)}</span>
+          <span className={styles.sub}>
+            <span className={`${styles.clock} mono`}>
+              <span ref={clockRef}>0:00</span>
+              <span className={styles.total}> / {formatClock(duration)}</span>
+            </span>
+            {currentChord !== null && (
+              <span className={styles.chords}>
+                <span className="visually-hidden">Acorde: </span>
+                <span className={`${styles.chord} mono`}>{currentChord}</span>
+                {nextChord !== null && (
+                  <span className={styles.next}>
+                    Sigue <span className="mono">{nextChord}</span>
+                  </span>
+                )}
+              </span>
+            )}
           </span>
         </p>
 

@@ -21,8 +21,10 @@ import { detectPreset } from "@/lib/audio/presets";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
 import { orderStems, STEM_LABEL, studioSources } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
+import { chordsAround, type Chord } from "@/lib/chords";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
+import { ChordLane } from "./ChordLane";
 import { Lane } from "./Lane";
 import { MixBar } from "./MixBar";
 import { MixExport } from "./MixExport";
@@ -254,6 +256,20 @@ function StudioStage({
   );
   useFrame(engine, track);
 
+  // The chord under the playhead and the next one; state changes only when either moves on.
+  const chords = useMemo<readonly Chord[]>(() => analysis.chords ?? [], [analysis.chords]);
+  const [around, setAround] = useState({ current: -1, next: -1 });
+  const trackChords = useCallback(
+    (position: number) => {
+      const next = chordsAround(chords, position);
+      setAround((prev) =>
+        prev.current === next.current && prev.next === next.next ? prev : next,
+      );
+    },
+    [chords],
+  );
+  useFrame(engine, trackChords);
+
   // Space plays and pauses unless it would press a control or edit text.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -442,6 +458,7 @@ function StudioStage({
             />
           ))}
         </div>
+        <ChordLane engine={engine} chords={chords} duration={duration} current={around.current} />
       </div>
 
       <Transport
@@ -454,6 +471,8 @@ function StudioStage({
         duration={duration}
         activeGroup={activeGroup}
         hasGrid={hasGrid}
+        currentChord={chords[around.current]?.label ?? null}
+        nextChord={chords[around.next]?.label ?? null}
       />
     </>
   );

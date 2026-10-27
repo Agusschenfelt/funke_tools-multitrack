@@ -41,6 +41,12 @@
   font-size: var(--text-base);
 }
 
+.alternative {
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+  cursor: help;
+}
+
 .meter {
   color: var(--paper-dim);
 }
