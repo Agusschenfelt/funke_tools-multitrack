@@ -101,6 +101,8 @@ def test_song_detail_lists_artifacts_and_expiry(client, store, song):
         "sections": False,
         "sections_edited": False,
         "stems": [],
+        "previews": [],
+        "preview": None,
         "packs": [],
     }
 
@@ -113,6 +115,49 @@ def test_song_detail_lists_artifacts_and_expiry(client, store, song):
     assert [s["name"] for s in artifacts["stems"]] == ["drums.wav"]
     assert [p["name"] for p in artifacts["packs"]] == ["Song One Pack.zip"]
     assert artifacts["packs"][0]["url"].startswith("/files/")
+
+
+def test_song_detail_lists_previews_apart_from_the_wav_stems(client, store, song):
+    sid = song["id"]
+    store.put_bytes(sid, "stems/drums.wav", b"wav")
+    store.put_bytes(sid, "stems/preview/drums.m4a", b"m4a")
+    store.put_bytes(
+        sid,
+        "stems/stemset.json",
+        b'{"samples": 1000, "sample_rate": 44100, "preview": {"priming_samples": 1024}}',
+    )
+    artifacts = client.get(f"/songs/{sid}").json()["artifacts"]
+    assert [s["name"] for s in artifacts["stems"]] == ["drums.wav"]
+    assert [p["name"] for p in artifacts["previews"]] == ["drums.m4a"]
+    assert artifacts["preview"] == {"samples": 1000, "sample_rate": 44100, "priming_samples": 1024}
+    response = client.get(artifacts["previews"][0]["url"])
+    assert response.status_code == 200
+    assert response.content == b"m4a"
+    assert response.headers["content-type"] == "audio/mp4"
+
+
+def test_previews_without_preview_metadata_report_no_meta(client, store, song):
+    sid = song["id"]
+    store.put_bytes(sid, "stems/preview/drums.m4a", b"m4a")
+    store.put_bytes(sid, "stems/stemset.json", b"{}")
+    artifacts = client.get(f"/songs/{sid}").json()["artifacts"]
+    assert len(artifacts["previews"]) == 1
+    assert artifacts["preview"] is None
+
+
+def test_m4a_is_only_servable_as_a_stem_preview(client, store, song):
+    from api import tokens
+    from api.services import downloadable
+
+    assert downloadable("stems/preview/drums.m4a")
+    assert not downloadable("stems/drums.m4a")
+    assert not downloadable("packs/x/drums.m4a")
+    store.put_bytes(song["id"], "stems/drums.m4a", b"m4a")
+    ctx = client.app.state.ctx
+    token = tokens.sign(
+        ctx.settings.signing_secret, song["id"], "stems/drums.m4a", ctx.now() + timedelta(hours=1)
+    )
+    assert client.get(f"/files/{token}").status_code == 403
 
 
 def test_unknown_and_malformed_song_ids_are_404(client):

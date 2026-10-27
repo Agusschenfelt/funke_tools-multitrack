@@ -47,6 +47,7 @@ describe("status and stage mapping", () => {
   it("translates every known stage and hides unknown ones", () => {
     expect(stageLabel("decoding")).toBe("Leyendo audio");
     expect(stageLabel("separating")).toBe("Separando pistas");
+    expect(stageLabel("previews")).toBe("Comprimiendo vista previa");
     expect(stageLabel("done")).toBe("Listo");
     expect(stageLabel("whatever")).toBe("—");
     expect(stageLabel(null)).toBe("—");

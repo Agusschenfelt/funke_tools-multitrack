@@ -5,6 +5,7 @@ import {
   exactBuffer,
   fetchStemBytes,
   loadStems,
+  previewWindow,
   readBytes,
 } from "./stemLoad";
 import type { StemSource } from "./stems";
@@ -186,5 +187,19 @@ describe("loadStems", () => {
       noop,
     );
     expect(peak).toBe(2);
+  });
+});
+
+describe("previewWindow", () => {
+  const alignment = { samples: 10_000, primingSamples: 1024 };
+
+  it("keeps a preview whose decoder already hid the encoder delay", () => {
+    expect(previewWindow(10_000, alignment)).toEqual({ start: 0, length: 10_000 });
+    expect(previewWindow(10_000 + 1023, alignment)).toEqual({ start: 0, length: 11_023 });
+  });
+
+  it("cuts the encoder delay and the padding when the decoder kept them", () => {
+    expect(previewWindow(10_000 + 1024, alignment)).toEqual({ start: 1024, length: 10_000 });
+    expect(previewWindow(10_000 + 1024 + 700, alignment)).toEqual({ start: 1024, length: 10_000 });
   });
 });

@@ -16,7 +16,8 @@ import { StudioEngine, type LoadFailure } from "@/lib/audio/engine";
 import { beatsPerBar } from "@/lib/audio/grid";
 import { stemGains } from "@/lib/audio/mix";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
-import { orderStems } from "@/lib/audio/stems";
+import { orderStems, studioSources } from "@/lib/audio/stems";
+import { formatBytes } from "@/lib/format";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
 import { Lane } from "./Lane";
@@ -169,7 +170,7 @@ function StudioBody(props: BodyProps) {
     // Publishing an external resource created by this effect; it cannot be created during render.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEngine(next);
-    next.load(orderStems(song.artifacts.stems), controller.signal).catch(() => {
+    next.load(studioSources(song.artifacts).sources, controller.signal).catch(() => {
       // load() reports its own failures through the engine state; this only keeps a bug from
       // surfacing as an unhandled rejection.
       if (!controller.signal.aborted) next.reportFailure("network");
@@ -277,6 +278,8 @@ function StudioStage({
     void engine.play();
   };
   const loadedCount = names.filter((name) => state.stems[name].phase === "ready").length;
+  const compressed = useMemo(() => studioSources(song.artifacts).compressed, [song]);
+  const downloaded = names.reduce((sum, name) => sum + state.stems[name].loaded, 0);
 
   return (
     <>
@@ -302,6 +305,13 @@ function StudioStage({
         {state.status === "loading" ? `Cargando pistas: ${loadedCount} de ${names.length}` : ""}
         {state.status === "ready" ? "Pistas listas" : ""}
       </p>
+
+      {state.status === "ready" && downloaded > 0 && (
+        <p className={styles.sizeNote}>
+          {compressed ? "Vista previa comprimida" : "Pistas sin comprimir"}: {formatBytes(downloaded)}{" "}
+          descargados. El pack exportado conserva la calidad completa.
+        </p>
+      )}
 
       <div className={styles.stage}>
         <SectionToolbar

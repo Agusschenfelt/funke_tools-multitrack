@@ -27,6 +27,7 @@ const STAGES: Record<string, string> = {
   analyzing: "Tempo y tonalidad",
   sections: "Secciones",
   separating: "Separando pistas",
+  previews: "Comprimiendo vista previa",
   loading: "Cargando pistas",
   packing: "Armando el pack",
   saving: "Guardando",

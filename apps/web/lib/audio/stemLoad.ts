@@ -2,7 +2,7 @@
  * Fetching and decoding of one stem, and the pool that runs stems three at a time. Kept free of
  * the AudioContext so the failure handling can be tested with fakes.
  */
-import type { StemName, StemSource } from "./stems";
+import type { PreviewAlignment, StemName, StemSource } from "./stems";
 
 export type LoadFailure = "expired" | "network" | "decode" | "unsupported";
 
@@ -95,6 +95,22 @@ export async function decodeStemBytes<B>(
   } catch {
     throw new StemLoadError("decode");
   }
+}
+
+/**
+ * Where a decoded preview should be cut to line up with the WAV stems. AAC starts with encoder
+ * delay: decoders that honor the mp4 edit list drop it (the result is the stem's length plus at
+ * most one frame of padding); the rest return it, which shows as at least `primingSamples` extra
+ * frames. Only then is the head cut, so a decoder that already trimmed is never trimmed twice.
+ */
+export function previewWindow(
+  decodedFrames: number,
+  alignment: PreviewAlignment,
+): { start: number; length: number } {
+  const delayed = decodedFrames - alignment.samples >= alignment.primingSamples;
+  if (!delayed) return { start: 0, length: decodedFrames };
+  const start = alignment.primingSamples;
+  return { start, length: Math.min(alignment.samples, decodedFrames - start) };
 }
 
 export async function pool<T>(items: readonly T[], size: number, work: (item: T) => Promise<void>) {

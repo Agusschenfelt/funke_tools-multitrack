@@ -7,7 +7,14 @@ import pytest
 import soundfile as sf
 
 from audio_core.constants import SAMPLE_RATE
-from audio_core.io import DecodeError, decode, duration_seconds, probe_duration, write_wav
+from audio_core.io import (
+    DecodeError,
+    decode,
+    duration_seconds,
+    encode_preview,
+    probe_duration,
+    write_wav,
+)
 from tests.conftest import SINE_AMPLITUDE, requires_ffmpeg
 
 
@@ -76,3 +83,23 @@ def test_probe_duration_falls_back_to_none_on_failure(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert probe_duration(tmp_path / "x.wav") is None
+
+
+@requires_ffmpeg
+def test_encode_preview_makes_a_small_aac_m4a_with_the_same_length(
+    sine_wav: Path, tmp_path: Path
+) -> None:
+    target = tmp_path / "preview" / "sine.m4a"
+    encode_preview(sine_wav, target)
+    assert target.stat().st_size < sine_wav.stat().st_size / 4
+    original, decoded = decode(sine_wav), decode(target)
+    # The edit list hides the encoder delay; at most one frame of padding remains.
+    assert 0 <= decoded.shape[-1] - original.shape[-1] < 1024
+
+
+@requires_ffmpeg
+def test_encode_preview_reports_an_unreadable_input(tmp_path: Path) -> None:
+    bad = tmp_path / "notes.txt"
+    bad.write_text("not audio", encoding="utf-8")
+    with pytest.raises(DecodeError, match="ffmpeg failed to encode"):
+        encode_preview(bad, tmp_path / "out.m4a")

@@ -12,7 +12,8 @@ Well-known names:
 * ``analysis.json``: analysis output.
 * ``sections.json``: the sections the user sees and edits; ``sections.detected.json``: the latest
   detector output (see ``analyze_job`` for who writes which).
-* ``stems/<stem>.wav`` plus ``stems/stemset.json``: separation output (``STEMS_PREFIX``).
+* ``stems/<stem>.wav`` plus ``stems/stemset.json``: separation output (``STEMS_PREFIX``);
+  ``stems/preview/<stem>.m4a``: compressed copies for the studio.
 * ``packs/<job_id>/<name>.zip``: built Stage Packs, one directory per pack job so packs of the
   same song never overwrite each other (``PACKS_PREFIX``, ``pack_object_name``).
 * ``jobs/<job_id>.json``: what a finished job returned (the API reads it when RQ forgot the job);

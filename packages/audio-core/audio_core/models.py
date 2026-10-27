@@ -52,6 +52,19 @@ class Stem(BaseModel):
     name: str
     path: str
     samples: int
+    # Compressed copy for the studio, relative to the stems directory (``preview/<name>.m4a``).
+    preview: str | None = None
+
+
+class PreviewInfo(BaseModel):
+    """How the stem previews were encoded; optional, absent for songs separated before them."""
+
+    codec: str = "aac"
+    container: str = "m4a"
+    bitrate_kbps: int
+    # Encoder delay at the start of each preview. Decoders that honor the mp4 edit list drop it;
+    # a player that does not must skip this many samples to line up with the WAV stems.
+    priming_samples: int
 
 
 class StemSet(BaseModel):
@@ -65,6 +78,7 @@ class StemSet(BaseModel):
     samples: int
     sample_rate: int = SAMPLE_RATE
     stems: list[Stem]
+    preview: PreviewInfo | None = None
 
 
 class SectionName(StrEnum):

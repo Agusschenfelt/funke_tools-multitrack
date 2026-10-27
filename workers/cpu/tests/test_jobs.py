@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import soundfile as sf
-from audio_core.constants import SAMPLE_RATE
+from audio_core.constants import PREVIEW_PRIMING_SAMPLES, SAMPLE_RATE
+from audio_core.io import DecodeError, decode
 from audio_core.models import Analysis, Sections, StemSet
 from rq.job import JobStatus
 
@@ -65,12 +66,72 @@ def test_separate_job_stores_stems_and_stemset(
     song: str, storage: LocalStorage, fake_models: None, recorder: StageRecorder
 ) -> None:
     result = jobs.separate_job(song, model="htdemucs_6s")
-    assert recorder.stages == ["decoding", "separating", "saving", "done"]
-    assert result == {"song_id": song, "model": "htdemucs_6s", "stems": list(STEM_NAMES)}
+    assert recorder.stages == ["decoding", "separating", "previews", "saving", "done"]
+    assert result == {
+        "song_id": song,
+        "model": "htdemucs_6s",
+        "stems": list(STEM_NAMES),
+        "previews": True,
+    }
     stemset = StemSet.model_validate_json(storage.get_bytes(song, "stems/stemset.json"))
     assert [s.name for s in stemset.stems] == list(STEM_NAMES)
+    assert stemset.preview is not None and stemset.preview.priming_samples == 1024
     for name in STEM_NAMES:
         assert storage.exists(song, f"stems/{name}.wav")
+        assert storage.exists(song, f"stems/preview/{name}.m4a")
+
+
+def _lag_samples(reference: np.ndarray, other: np.ndarray, window: int = 2048) -> int:
+    """Samples ``other`` is late relative to ``reference`` (FFT cross-correlation, +-window)."""
+    n = min(len(reference), len(other))
+    size = 1 << (2 * n - 1).bit_length()
+    corr = np.fft.irfft(
+        np.fft.rfft(other[:n], size) * np.conj(np.fft.rfft(reference[:n], size)), size
+    )
+    lags = np.concatenate([np.arange(0, window + 1), np.arange(-window, 0)])
+    scores = np.concatenate([corr[: window + 1], corr[size - window :]])
+    return int(lags[int(np.argmax(scores))])
+
+
+@requires_ffmpeg
+def test_previews_are_aligned_with_the_wav_stems(
+    song: str, storage: LocalStorage, fake_models: None, tmp_path: Path
+) -> None:
+    """Every preview decodes to the stem's length and lines up with it (lag 0 samples)."""
+    jobs.separate_job(song)
+    for name in ("drums", "vocals"):
+        wav, preview = tmp_path / f"{name}.wav", tmp_path / f"{name}.m4a"
+        storage.get_file(song, f"stems/{name}.wav", wav)
+        storage.get_file(song, f"stems/preview/{name}.m4a", preview)
+        original, decoded = decode(wav), decode(preview)
+        # ffmpeg honors the edit list: the encoder delay is gone, at most a frame of padding stays.
+        assert 0 <= decoded.shape[-1] - original.shape[-1] < PREVIEW_PRIMING_SAMPLES
+        assert _lag_samples(original[0], decoded[0]) == 0
+
+
+@requires_ffmpeg
+def test_separate_job_keeps_wav_stems_when_preview_encoding_fails(
+    song: str,
+    storage: LocalStorage,
+    fake_models: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+
+    def flaky(source: Path, target: Path, *args, **kwargs) -> None:
+        calls.append(target)
+        if len(calls) == 3:
+            raise DecodeError("boom")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"x")
+
+    monkeypatch.setattr(jobs, "encode_preview", flaky)
+    result = jobs.separate_job(song)
+    assert result["previews"] is False
+    stemset = StemSet.model_validate_json(storage.get_bytes(song, "stems/stemset.json"))
+    assert stemset.preview is None and all(s.preview is None for s in stemset.stems)
+    assert storage.list_names(song, "stems/preview/") == []
+    assert all(storage.exists(song, f"stems/{n}.wav") for n in STEM_NAMES)
 
 
 @requires_ffmpeg

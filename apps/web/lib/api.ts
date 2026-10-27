@@ -86,6 +86,10 @@ export interface Artifacts {
   sections: boolean;
   sections_edited: boolean;
   stems: ArtifactLink[];
+  /** Compressed stems for the studio; absent or empty for songs separated before they existed. */
+  previews?: ArtifactLink[];
+  /** How the previews line up with the WAV stems; null/absent when there are none. */
+  preview?: { samples: number; sample_rate: number; priming_samples: number } | null;
   packs: ArtifactLink[];
 }
 

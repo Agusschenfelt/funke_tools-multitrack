@@ -38,6 +38,8 @@ const created = { sources: [] as FakeSource[], gains: [] as FakeGain[], contexts
 let decodeFails: Set<number> = new Set();
 let decodeCalls = 0;
 let failConstruct = false;
+let decodedFrames: number | null = null;
+let createdBuffers: { length: number; copied: Float32Array[] }[] = [];
 
 class FakeContext {
   currentTime = 0;
@@ -60,7 +62,16 @@ class FakeContext {
     return source;
   }
   createBuffer(_channels: number, length: number, rate: number) {
-    return { duration: length / rate, copyToChannel() {} };
+    const buffer = {
+      length,
+      duration: length / rate,
+      copied: [] as Float32Array[],
+      copyToChannel(data: Float32Array) {
+        buffer.copied.push(data);
+      },
+    };
+    createdBuffers.push(buffer);
+    return buffer;
   }
   async resume() {}
   async close() {
@@ -70,6 +81,16 @@ class FakeContext {
   async decodeAudioData(data: ArrayBuffer) {
     const call = decodeCalls++;
     if (decodeFails.has(call) || data.byteLength === 0) throw new Error("bad audio");
+    if (decodedFrames !== null) {
+      const ramp = Float32Array.from({ length: decodedFrames }, (_, i) => i);
+      return {
+        length: decodedFrames,
+        duration: decodedFrames / 44100,
+        numberOfChannels: 1,
+        sampleRate: 44100,
+        getChannelData: () => ramp,
+      };
+    }
     return {
       duration: 10,
       numberOfChannels: 1,
@@ -104,6 +125,8 @@ beforeEach(() => {
   decodeFails = new Set();
   decodeCalls = 0;
   failConstruct = false;
+  decodedFrames = null;
+  createdBuffers = [];
   vi.stubGlobal("AudioContext", FakeContext);
   stubFetch();
 });
@@ -179,6 +202,29 @@ describe("StudioEngine.load failure paths", () => {
     await expect(engine.load(sources, new AbortController().signal)).resolves.toBeUndefined();
     expect(engine.getSnapshot()).toMatchObject({ status: "error", failure: "unsupported" });
     engine.dispose();
+  });
+});
+
+describe("StudioEngine.load with compressed previews", () => {
+  const alignment = { samples: 5000, primingSamples: 1024 };
+  const preview: StemSource[] = [{ name: "drums", url: "http://x/drums", alignment }];
+
+  it("cuts the encoder delay when the decoder returned it", async () => {
+    decodedFrames = 5000 + 1024 + 300;
+    const engine = new StudioEngine();
+    await engine.load(preview, new AbortController().signal);
+    expect(engine.getSnapshot().status).toBe("ready");
+    const aligned = createdBuffers.find((b) => b.length === 5000);
+    expect(aligned).toBeDefined();
+    expect(aligned?.copied[0][0]).toBe(1024);
+  });
+
+  it("leaves the buffer alone when the decoder already hid the delay", async () => {
+    decodedFrames = 5000 + 200;
+    const engine = new StudioEngine();
+    await engine.load(preview, new AbortController().signal);
+    expect(engine.getSnapshot().status).toBe("ready");
+    expect(createdBuffers.filter((b) => b.length === 5000)).toHaveLength(0);
   });
 });
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from audio_core.constants import CHANNELS, DTYPE, SAMPLE_RATE
+from audio_core.constants import CHANNELS, DTYPE, PREVIEW_BITRATE_KBPS, SAMPLE_RATE
 
 
 class DecodeError(RuntimeError):
@@ -85,3 +85,35 @@ def write_wav(
 def duration_seconds(audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> float:
     """Return the duration of audio of shape (channels, samples) in seconds."""
     return audio.shape[-1] / sample_rate
+
+
+def encode_preview(
+    source: Path,
+    target: Path,
+    bitrate_kbps: int = PREVIEW_BITRATE_KBPS,
+    timeout: float = DEFAULT_DECODE_TIMEOUT,
+) -> None:
+    """Encode an audio file to AAC-LC stereo 44.1 kHz in an ``.m4a`` container with ffmpeg.
+
+    ffmpeg's built-in ``aac`` encoder is used (no external library). The mp4 muxer writes the
+    edit list that hides the encoder delay, so decoders that honor it return the original sample
+    count. ``+faststart`` keeps the header at the front for streaming.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg", "-v", "error", "-nostdin", "-y",
+        "-i", str(source),
+        "-vn", "-c:a", "aac", "-b:a", f"{bitrate_kbps}k",
+        "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE),
+        "-movflags", "+faststart",
+        str(target),
+    ]  # fmt: skip
+    try:
+        proc = subprocess.run(cmd, capture_output=True, check=False, timeout=timeout)
+    except FileNotFoundError as exc:
+        raise DecodeError("ffmpeg executable not found on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise DecodeError(f"ffmpeg timed out after {timeout:g} s encoding {source}") from exc
+    if proc.returncode != 0:
+        tail = proc.stderr.decode("utf-8", errors="replace").strip()[-500:]
+        raise DecodeError(f"ffmpeg failed to encode {source} (exit {proc.returncode}): {tail}")
