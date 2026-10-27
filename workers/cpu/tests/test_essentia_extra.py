@@ -14,5 +14,5 @@ def test_worker_requests_the_essentia_extra() -> None:
 
 def test_worker_lock_pins_essentia() -> None:
     lock = (ROOT / "workers" / "cpu" / "uv.lock").read_text()
-    assert 'name = "essentia"' in lock
-    assert "manylinux_2_17_x86_64" in lock.split('name = "essentia"')[1].split("[[package]]")[0]
+    block = lock.split('[[package]]\nname = "essentia"')[1].split("[[package]]")[0]
+    assert "manylinux_2_17_x86_64" in block
