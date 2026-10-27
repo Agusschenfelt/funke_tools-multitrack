@@ -12,7 +12,13 @@ from audio_core.analysis import AnalysisError, AnalyzeOptions
 from audio_core.analysis import analyze as run_analyze
 from audio_core.guide import CueLibraryError
 from audio_core.io import DecodeError, decode
-from audio_core.models import Analysis, Sections, StagePackOptions, StemSet
+from audio_core.models import Analysis, Grid, Sections, StagePackOptions, StemSet
+from audio_core.sections import (
+    SectionsError,
+    detect_sections,
+    load_vocal_stem,
+    sections_model_version,
+)
 from audio_core.separation import DEFAULT_MODEL, SeparationError
 from audio_core.separation import separate as run_separate
 from audio_core.stagepack import StagePackError, build_stagepack, load_json_model
@@ -30,7 +36,14 @@ def _run_or_exit(step: Callable[[], T], name: str) -> T:
     """Run a pipeline step, translating known failures into CLI exit codes."""
     try:
         return step()
-    except (DecodeError, AnalysisError, SeparationError, StagePackError, CueLibraryError) as exc:
+    except (
+        DecodeError,
+        AnalysisError,
+        SeparationError,
+        StagePackError,
+        CueLibraryError,
+        SectionsError,
+    ) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     except NotImplementedError as exc:
@@ -60,6 +73,20 @@ def _summary(result: Analysis) -> str:
     return " | ".join(parts)
 
 
+def _sections_summary(result: Sections, grid: Grid) -> list[str]:
+    """One line per section: name, start bar, mm:ss and confidence."""
+    downbeats = list(grid.downbeats)
+    lines = []
+    for section in result.sections:
+        bar = min(range(len(downbeats)), key=lambda i: abs(downbeats[i] - section.start)) + 1
+        minutes, seconds = divmod(int(section.start), 60)
+        confidence = "n/a" if section.confidence is None else f"{section.confidence:.2f}"
+        lines.append(
+            f"{section.name.value:<12} bar {bar:<4} {minutes}:{seconds:02d}  conf {confidence}"
+        )
+    return lines
+
+
 def _separation_summary(result: StemSet) -> str:
     ratio = result.elapsed_seconds / result.audio_seconds if result.audio_seconds else 0.0
     return (
@@ -75,13 +102,63 @@ def analyze(
     key_backend: Annotated[
         str, typer.Option("--key-backend", help="Key estimator: auto, essentia or librosa.")
     ] = "auto",
+    detect: Annotated[
+        bool,
+        typer.Option(
+            "--sections/--no-sections",
+            help="Also detect song sections and write sections.json (slower; off by default).",
+        ),
+    ] = False,
 ) -> None:
-    """Analyze tempo grid, key and loudness; writes analysis.json."""
+    """Analyze tempo grid, key and loudness; writes analysis.json (and sections.json)."""
     options = AnalyzeOptions(key_backend=key_backend)  # type: ignore[arg-type]
     audio = _run_or_exit(lambda: decode(input), "decode")
     result = _run_or_exit(lambda: run_analyze(audio, str(input), options=options), "analyze")
+    detected = None
+    if detect:
+        if result.grid is None:
+            typer.echo("Error: analysis has no beat grid; cannot detect sections", err=True)
+            raise typer.Exit(code=1)
+        grid = result.grid
+        detected = _run_or_exit(lambda: detect_sections(audio, grid, source=str(input)), "sections")
+        result.models["sections"] = sections_model_version()
     _write_json(result, out, "analysis.json")
     console.print(_summary(result), markup=False, highlight=False)
+    if detected is not None and result.grid is not None:
+        _write_json(detected, out, "sections.json")
+        for line in _sections_summary(detected, result.grid):
+            console.print(line, markup=False, highlight=False)
+
+
+@app.command()
+def sections(
+    input: InputArg,
+    out: OutOpt,
+    analysis: Annotated[Path, typer.Option("--analysis", help="analysis.json from analyze.")],
+    stems: Annotated[
+        Path | None,
+        typer.Option("--stems", help="Stem set directory; its vocals stem sharpens the labels."),
+    ] = None,
+) -> None:
+    """Detect song sections from audio and analysis.json; writes sections.json."""
+    loaded = _run_or_exit(lambda: load_json_model(analysis, Analysis, "analysis"), "sections")
+    if loaded.grid is None:
+        typer.echo("Error: analysis has no beat grid; cannot detect sections", err=True)
+        raise typer.Exit(code=1)
+    grid = loaded.grid
+
+    def detect_from_files() -> Sections:
+        audio = decode(input)
+        vocals = None
+        if stems is not None:
+            stemset = load_json_model(stems / "stemset.json", StemSet, "stemset.json")
+            vocals = load_vocal_stem(stemset, stems)
+        return detect_sections(audio, grid, vocals=vocals, source=str(input))
+
+    result = _run_or_exit(detect_from_files, "sections")
+    _write_json(result, out, "sections.json")
+    for line in _sections_summary(result, grid):
+        console.print(line, markup=False, highlight=False)
 
 
 @app.command()

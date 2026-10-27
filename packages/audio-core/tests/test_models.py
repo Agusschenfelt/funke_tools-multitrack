@@ -72,3 +72,19 @@ def test_stage_pack_options_defaults() -> None:
 def test_stage_pack_options_reject_invalid_values(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
         StagePackOptions(**{"destination": "daw", field: value})  # type: ignore[arg-type]
+
+
+def test_sections_json_without_detection_fields_still_validates() -> None:
+    raw = '{"sections": [{"name": "verse", "start": 12.0, "label": "V1"}]}'
+    section = Sections.model_validate_json(raw).sections[0]
+    assert section.confidence is None
+    assert section.cluster is None
+
+
+def test_detected_section_fields_roundtrip_and_are_bounded() -> None:
+    section = Section(name=SectionName.CHORUS, start=1.0, confidence=0.8, cluster=2)
+    assert Section.model_validate_json(section.model_dump_json()) == section
+    with pytest.raises(ValidationError):
+        Section(name=SectionName.CHORUS, start=1.0, confidence=1.5)
+    with pytest.raises(ValidationError):
+        Section(name=SectionName.CHORUS, start=1.0, cluster=-1)
