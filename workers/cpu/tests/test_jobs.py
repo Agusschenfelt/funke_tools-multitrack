@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import zipfile
@@ -252,6 +253,43 @@ def test_rerun_keeps_edited_sections_and_refreshes_detected(
     assert result["sections_overwritten"] is False
     assert result["sections"] == "sections.json"
     assert result["sections_detected"] == "sections.detected.json"
+
+
+@requires_ffmpeg
+def test_overwrite_is_skipped_when_sections_changed_since_enqueue(
+    song: str, storage: LocalStorage, fake_models: None
+) -> None:
+    jobs.analyze_job(song)
+    seen = hashlib.sha256(storage.get_bytes(song, "sections.json")).hexdigest()
+    storage.put_bytes(song, "sections.json", b"edit saved while the job ran")
+    result = jobs.analyze_job(song, overwrite_sections=True, expected_sections_sha256=seen)
+    assert storage.get_bytes(song, "sections.json") == b"edit saved while the job ran"
+    Sections.model_validate_json(storage.get_bytes(song, "sections.detected.json"))
+    assert result["sections_overwritten"] is False
+
+
+@requires_ffmpeg
+def test_overwrite_proceeds_when_sections_are_unchanged_since_enqueue(
+    song: str, storage: LocalStorage, fake_models: None
+) -> None:
+    jobs.analyze_job(song)
+    seen = hashlib.sha256(storage.get_bytes(song, "sections.json")).hexdigest()
+    result = jobs.analyze_job(song, overwrite_sections=True, expected_sections_sha256=seen)
+    assert storage.get_bytes(song, "sections.json") == storage.get_bytes(
+        song, "sections.detected.json"
+    )
+    assert result["sections_overwritten"] is True
+
+
+@requires_ffmpeg
+def test_overwrite_is_skipped_when_sections_appeared_after_enqueue(
+    song: str, storage: LocalStorage, fake_models: None
+) -> None:
+    # Enqueued when no sections.json existed ("" hash); a user saved one before the job finished.
+    storage.put_bytes(song, "sections.json", b"user edit")
+    result = jobs.analyze_job(song, overwrite_sections=True, expected_sections_sha256="")
+    assert storage.get_bytes(song, "sections.json") == b"user edit"
+    assert result["sections_overwritten"] is False
 
 
 @requires_ffmpeg

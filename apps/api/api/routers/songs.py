@@ -109,6 +109,13 @@ def get_song_detail(song: ActiveSong, ctx: Ctx, session: DbSession) -> SongDetai
     return SongDetail(**_song_fields(song), artifacts=artifacts_of(session, ctx, song))
 
 
+def _sections_sha256(ctx: Ctx, song_id: str) -> str:
+    try:
+        return hashlib.sha256(ctx.storage.get_bytes(song_id, names.SECTIONS)).hexdigest()
+    except names.StorageError:
+        return ""
+
+
 @router.post("/songs/{song_id}/analyze", response_model=JobCreated, status_code=202)
 def analyze(
     song: ActiveSong, ctx: Ctx, session: DbSession, body: AnalyzeRequest | None = None
@@ -119,8 +126,11 @@ def analyze(
     state = session.get(SectionsState, song.id)
     if not (state and state.edited):
         # Never edited by the user: the fresh detection must replace sections.json. Edited
-        # sections stay protected because the flag is simply not sent.
+        # sections stay protected because the flag is simply not sent. The worker may run long,
+        # so it also gets the hash of the file as seen now and skips the overwrite if a user
+        # edit changed it meanwhile ("" means it did not exist).
         kwargs["overwrite_sections"] = True
+        kwargs["expected_sections_sha256"] = _sections_sha256(ctx, song.id)
     job_id = create_job(
         session,
         ctx,

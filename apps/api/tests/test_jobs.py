@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -36,6 +37,7 @@ def test_analyze_enqueues_by_dotted_path_with_source_name(client, queue, song):
         "sections": True,
         "source_name": "Song One.wav",
         "overwrite_sections": True,
+        "expected_sections_sha256": "",
     }
     assert call["job_id"] == job_id
     assert call["timeout"] > 180
@@ -662,6 +664,15 @@ def test_failed_enqueue_keeps_the_job_failed_and_drops_its_orphan_pack(client, q
 def test_analyze_of_never_edited_sections_asks_the_worker_to_overwrite(client, queue, store, song):
     client.post(f"/songs/{song['id']}/analyze")
     assert queue.enqueued[-1]["kwargs"]["overwrite_sections"] is True
+
+
+def test_analyze_sends_the_hash_of_the_current_sections_file(client, queue, store, song):
+    data = b'{"source": "x", "sections": []}'
+    store.put_bytes(song["id"], "sections.json", data)
+    client.post(f"/songs/{song['id']}/analyze")
+    kwargs = queue.enqueued[-1]["kwargs"]
+    assert kwargs["overwrite_sections"] is True
+    assert kwargs["expected_sections_sha256"] == hashlib.sha256(data).hexdigest()
 
 
 def test_reanalysis_never_asks_the_worker_to_overwrite_edited_sections(client, queue, store, song):
