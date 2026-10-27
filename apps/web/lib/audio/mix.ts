@@ -3,9 +3,21 @@ export interface StemMix {
   volume: number;
   muted: boolean;
   solo: boolean;
+  /** -1 (left) .. 1 (right); 0 is centre. */
+  pan: number;
 }
 
-export const DEFAULT_MIX: StemMix = { volume: 1, muted: false, solo: false };
+export const DEFAULT_MIX: StemMix = { volume: 1, muted: false, solo: false, pan: 0 };
+
+export const clampPan = (value: number) =>
+  Math.min(1, Math.max(-1, Number.isFinite(value) ? value : 0));
+
+/** Spoken value of a pan position for assistive technology and tooltips. */
+export function panText(pan: number): string {
+  const percent = Math.round(Math.abs(clampPan(pan)) * 100);
+  if (percent === 0) return "Centro";
+  return `${percent} % ${pan < 0 ? "izquierda" : "derecha"}`;
+}
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
 

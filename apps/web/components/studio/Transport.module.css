@@ -20,6 +20,8 @@
   margin: 0 auto var(--space-3);
   background: var(--ink);
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
 }
 
 .mapSection {
@@ -99,6 +101,32 @@
 
 .clock {
   color: var(--paper-dim);
+  white-space: nowrap;
+}
+
+/* Under the position on a phone; one row with the clock on desktop. */
+.sub {
+  display: contents;
+}
+
+/* The chord now, large, with the next one beside it on desktop. */
+.chords {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.chord {
+  min-width: 3ch;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.next {
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 
@@ -195,6 +223,26 @@
   }
 
   .total {
+    display: none;
+  }
+
+  /* Phone: the clock and only the current chord share the second line under the position. */
+  .sub {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .chords {
+    gap: 0;
+  }
+
+  .chord {
+    min-width: 0;
+    font-size: var(--text-base);
+  }
+
+  .next {
     display: none;
   }
 

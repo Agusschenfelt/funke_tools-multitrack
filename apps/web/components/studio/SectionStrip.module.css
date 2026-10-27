@@ -156,7 +156,10 @@
   left: 0;
   height: 1.5rem;
   border-top: 1px solid var(--rule);
-  pointer-events: none;
+  /* Click seeks; dragging here selects a range to loop. */
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
 }
 
 .bar {
@@ -167,6 +170,10 @@
   color: var(--paper-dim);
   font-size: var(--text-sm);
   line-height: 1.25rem;
+}
+
+.barClock {
+  color: var(--paper-dim);
 }
 
 .barAnchor {

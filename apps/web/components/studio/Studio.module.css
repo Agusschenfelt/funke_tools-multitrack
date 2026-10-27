@@ -41,6 +41,12 @@
   font-size: var(--text-base);
 }
 
+.alternative {
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+  cursor: help;
+}
+
 .meter {
   color: var(--paper-dim);
 }
@@ -176,6 +182,11 @@
 
   .mode {
     font-size: var(--text-base);
+  }
+
+  /* Phone: the same note sits in the mixer's "Más" menu so the first lane stays above the fold. */
+  .sizeNote {
+    display: none;
   }
 }
 

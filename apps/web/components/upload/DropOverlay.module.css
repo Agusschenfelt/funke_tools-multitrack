@@ -1,0 +1,64 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  pointer-events: none;
+  /* Solid tinted fallback; the blur version replaces it where supported. */
+  background: rgb(20 18 16 / 0.94);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .overlay {
+    background: rgb(20 18 16 / 0.62);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .overlay {
+    animation: fade-in var(--duration-fast) var(--ease-out);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The one orange mark: a thin frame inset from the viewport edge. */
+.frame {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: 100%;
+  align-content: center;
+  border: 2px solid var(--orange);
+  border-radius: var(--radius);
+  text-align: center;
+  padding: var(--space-5);
+}
+
+.icon {
+  color: var(--paper);
+}
+
+.message {
+  font-size: var(--display);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.constraints {
+  max-width: var(--measure);
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+}

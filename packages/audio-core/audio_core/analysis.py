@@ -10,6 +10,7 @@ Heavy imports (torch, beat_this, librosa) stay inside the functions that need th
 ``--help`` and the I/O tests remain fast.
 """
 
+import logging
 from dataclasses import dataclass
 from importlib import metadata
 from typing import Literal
@@ -23,7 +24,23 @@ from audio_core.gridfix import (
     extrapolate_lead_in,
     remove_outlier_beats,
 )
-from audio_core.models import Analysis, Grid, KeyInfo, Loudness, ModelVersion
+from audio_core.harmony import (
+    CHORDS_VERSION,
+    HPCP_HARMONICS,
+    HPCP_MAX_HZ,
+    HPCP_MIN_HZ,
+    PANEL_PROFILES,
+    PRIMARY_PROFILE,
+    detect_chords,
+    essentia_version,
+    estimate_key_with_chords,
+)
+from audio_core.models import Analysis, Chord, Grid, KeyInfo, Loudness, ModelVersion
+
+log = logging.getLogger(__name__)
+
+# ChordsDetectionBeats needs at least this many beats to span two segments.
+MIN_REAL_BEATS_FOR_CHORDS = 3
 
 BEAT_MODEL = "final0"
 TRUE_PEAK_OVERSAMPLING = 4
@@ -189,15 +206,15 @@ def estimate_key_librosa(audio: np.ndarray) -> KeyInfo:
     return key_info(*best)
 
 
-def estimate_key_essentia(audio: np.ndarray) -> KeyInfo:
-    """Key estimate from Essentia's KeyExtractor. Raises ImportError if unavailable."""
-    import essentia.standard as es
+def estimate_key_essentia(audio: np.ndarray, chords: list[Chord] | None = None) -> KeyInfo:
+    """Key estimate from Essentia's KeyExtractor, with an alternative when it is doubtful.
 
-    key, scale, _strength = es.KeyExtractor(sampleRate=SAMPLE_RATE)(to_mono(audio))
-    name = _FLAT_TO_SHARP.get(key, key)
-    if name not in PITCH_CLASSES or scale not in ("major", "minor"):
-        raise AnalysisError(f"unexpected Essentia key output: {key} {scale}")
-    return key_info(PITCH_CLASSES.index(name), scale)
+    Raises ImportError if unavailable. ``chords`` adds the chord-based tonic hint to the decision.
+    """
+    _chosen, info, _reason = estimate_key_with_chords(to_mono(audio), chords)
+    if info is None:
+        raise AnalysisError("Essentia returned an unexpected key")
+    return info
 
 
 def _essentia_available() -> bool:
@@ -226,18 +243,90 @@ def resolve_key_backend(backend: KeyBackend = "auto") -> Literal["essentia", "li
 
 def key_model_version(backend: KeyBackend = "auto") -> ModelVersion:
     """The model record for whichever key backend `estimate_key` will use."""
-    if resolve_key_backend(backend) == "essentia":
-        return ModelVersion(name="essentia-keyextractor", version=_package_version("essentia"))
+    return _key_model(resolve_key_backend(backend))
+
+
+def _key_model(used: Literal["essentia", "librosa"]) -> ModelVersion:
+    """The model record of the key backend that actually produced the key."""
+    if used == "essentia":
+        return ModelVersion(
+            name="essentia-keyextractor",
+            version=essentia_version(),
+            source=(
+                f"profile {PRIMARY_PROFILE}; runner-up panel {'/'.join(PANEL_PROFILES)}; "
+                "chord tonic hint"
+            ),
+        )
     return ModelVersion(
         name="librosa-krumhansl", version=_package_version("librosa"), source="chroma_cqt"
     )
 
 
-def estimate_key(audio: np.ndarray, backend: KeyBackend = "auto") -> KeyInfo:
+def estimate_key(
+    audio: np.ndarray, backend: KeyBackend = "auto", chords: list[Chord] | None = None
+) -> KeyInfo:
     """Estimate the key. "auto" prefers Essentia when importable and falls back to librosa."""
     if resolve_key_backend(backend) == "essentia":
-        return estimate_key_essentia(audio)
+        return estimate_key_essentia(audio, chords)
     return estimate_key_librosa(audio)
+
+
+def estimate_key_resolved(
+    audio: np.ndarray, backend: KeyBackend = "auto", chords: list[Chord] | None = None
+) -> tuple[KeyInfo, Literal["essentia", "librosa"]]:
+    """Estimate the key and report the backend that produced it.
+
+    With "auto", any Essentia failure falls back to librosa (logged, and noted on the result);
+    an explicit "essentia" keeps failing loudly.
+    """
+    resolved = resolve_key_backend(backend)
+    if resolved == "librosa":
+        return estimate_key_librosa(audio), "librosa"
+    if backend == "essentia":
+        return estimate_key_essentia(audio, chords), "essentia"
+    try:
+        return estimate_key_essentia(audio, chords), "essentia"
+    except Exception as exc:  # noqa: BLE001 - "auto" must not fail the analysis on Essentia
+        log.warning("essentia key estimate failed; falling back to librosa", exc_info=True)
+        info = estimate_key_librosa(audio)
+        reason = f"essentia key estimate failed ({exc}); used librosa"
+        info.note = f"{info.note}; {reason}" if info.note else reason
+        return info, "librosa"
+
+
+def chords_model_version() -> ModelVersion:
+    return ModelVersion(
+        name="essentia-chordsdetectionbeats",
+        version=essentia_version(),
+        source=(
+            f"hpcp {HPCP_MIN_HZ}-{HPCP_MAX_HZ} Hz, {HPCP_HARMONICS} harmonics; "
+            f"beat-aligned segments v{CHORDS_VERSION}"
+        ),
+    )
+
+
+def detect_song_chords(audio: np.ndarray, grid: Grid | None) -> list[Chord] | None:
+    """Chord segments over the real beats of the grid; None when they cannot be detected.
+
+    A failure here never fails the analysis: the studio simply has no chord lane.
+    """
+    if grid is None or not grid.beats:
+        return None
+    # Beats before ``extrapolated_until`` are invented lead-in; only the real ones count.
+    start = grid.extrapolated_until
+    real = [b for b in grid.beats if start is None or b >= start - 1e-3]
+    if len(real) < MIN_REAL_BEATS_FOR_CHORDS:
+        log.info("only %d real beats; skipping chord detection", len(real))
+        return None
+    try:
+        chords = detect_chords(to_mono(audio), real)
+    except Exception:  # noqa: BLE001 - chords are an extra; any Essentia failure is non-fatal
+        log.warning("chord detection failed; analysis continues without chords", exc_info=True)
+        return None
+    if not chords:
+        log.info("chord detection found no chords")
+        return None
+    return chords
 
 
 # --- Loudness ----------------------------------------------------------------------------
@@ -287,14 +376,16 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
     options = options or AnalyzeOptions()
     key_backend = resolve_key_backend(options.key_backend)
     # Fail fast, before the slow beat model runs: a missing extra must not surface only after it.
-    if key_backend == "librosa":
+    # "auto" may fall back to librosa when the Essentia estimate fails at run time.
+    if key_backend == "librosa" or options.key_backend == "auto":
         require("librosa")
     require("pyloudnorm")
     beats, downbeats = detect_beats(
         audio, checkpoint=options.beat_checkpoint, device=options.device
     )
     grid = build_grid(beats, downbeats)
-    key = estimate_key(audio, options.key_backend)
+    chords = detect_song_chords(audio, grid) if key_backend == "essentia" else None
+    key, key_used = estimate_key_resolved(audio, options.key_backend, chords)
     loudness = measure_loudness(audio)
     return Analysis(
         source=source,
@@ -303,6 +394,7 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
         grid=grid,
         key=key,
         loudness=loudness,
+        chords=chords,
         models={
             "beats": ModelVersion(
                 name="beat_this",
@@ -314,7 +406,8 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
                 version=GRID_POSTPROCESS_VERSION,
                 source="outlier beat cleanup + backward lead-in extrapolation",
             ),
-            "key": key_model_version(options.key_backend),
+            "key": _key_model(key_used),
             "loudness": ModelVersion(name="pyloudnorm", version=_package_version("pyloudnorm")),
+            **({"chords": chords_model_version()} if chords else {}),
         },
     )

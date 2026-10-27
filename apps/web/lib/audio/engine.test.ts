@@ -7,13 +7,20 @@ class FakeSource {
   stopped = false;
   disconnected = false;
   buffer: unknown = null;
+  loop = false;
+  loopStart = 0;
+  loopEnd = 0;
+  startedAt: number | null = null;
+  offset: number | null = null;
   onended: (() => void) | null = null;
   connect() {}
   disconnect() {
     this.disconnected = true;
   }
-  start() {
+  start(when?: number, offset?: number) {
     this.started = true;
+    this.startedAt = when ?? null;
+    this.offset = offset ?? null;
   }
   stop() {
     this.stopped = true;
@@ -41,6 +48,8 @@ let failConstruct = false;
 let decodedFrames: number | null = null;
 let createdBuffers: { length: number; copied: Float32Array[] }[] = [];
 
+const pans: { pan: { value: number; targets: number[] }; disconnected: boolean }[] = [];
+
 class FakeContext {
   currentTime = 0;
   state = "running";
@@ -55,6 +64,24 @@ class FakeContext {
     const gain = new FakeGain();
     created.gains.push(gain);
     return gain;
+  }
+  createStereoPanner() {
+    const panner = {
+      disconnected: false,
+      pan: {
+        value: 0,
+        targets: [] as number[],
+        setTargetAtTime(value: number) {
+          panner.pan.targets.push(value);
+        },
+      },
+      connect() {},
+      disconnect() {
+        panner.disconnected = true;
+      },
+    };
+    pans.push(panner);
+    return panner;
   }
   createBufferSource() {
     const source = new FakeSource();
@@ -127,6 +154,7 @@ beforeEach(() => {
   failConstruct = false;
   decodedFrames = null;
   createdBuffers = [];
+  pans.length = 0;
   vi.stubGlobal("AudioContext", FakeContext);
   stubFetch();
 });
@@ -290,5 +318,312 @@ describe("StudioEngine.dispose", () => {
     await ready(engine);
     engine.dispose();
     expect(created.contexts[0].closed).toBe(true);
+  });
+});
+
+describe("StudioEngine pan and presets", () => {
+  it("builds one panner per stem and moves it with setPan", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    expect(pans).toHaveLength(3);
+    engine.setPan("bass", -0.5);
+    expect(engine.getSnapshot().mix.bass.pan).toBe(-0.5);
+    expect(pans.filter((p) => p.pan.targets.includes(-0.5))).toHaveLength(1);
+    engine.setPan("bass", 9);
+    expect(engine.getSnapshot().mix.bass.pan).toBe(1);
+    engine.dispose();
+  });
+
+  it("restores saved pans, ignoring unknown values", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.restorePans({ drums: 0.4, vocals: -2 });
+    const { mix } = engine.getSnapshot();
+    expect(mix.drums.pan).toBe(0.4);
+    expect(mix.vocals.pan).toBe(-1);
+    expect(mix.bass.pan).toBe(0);
+    engine.dispose();
+  });
+
+  it("plays centred when the browser has no StereoPannerNode", async () => {
+    const proto = FakeContext.prototype as unknown as { createStereoPanner?: unknown };
+    const original = proto.createStereoPanner;
+    proto.createStereoPanner = undefined;
+    const engine = new StudioEngine();
+    await ready(engine);
+    expect(pans).toHaveLength(0);
+    engine.setPan("drums", 0.5);
+    engine.dispose();
+    proto.createStereoPanner = original;
+  });
+
+  it("applies a preset to the lanes it has", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.toggleSolo("bass");
+    engine.applyPreset("karaoke");
+    const { mix } = engine.getSnapshot();
+    expect(mix.vocals.muted).toBe(true);
+    expect(mix.drums.muted).toBe(false);
+    expect(mix.bass.solo).toBe(false);
+    engine.dispose();
+  });
+});
+
+describe("StudioEngine loop A-B", () => {
+  const loop = { start: 10, end: 12 };
+
+  beforeEach(() => {
+    // A 20 s song, so the loop fits inside it.
+    decodedFrames = 44100 * 20;
+  });
+
+  it("starts the stems looping inside the range", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setLoop(loop);
+    expect(engine.getSnapshot().loop).toEqual(loop);
+    await engine.play();
+    expect(created.sources).toHaveLength(3);
+    for (const source of created.sources) {
+      expect(source).toMatchObject({ loop: true, loopStart: 10, loopEnd: 12, offset: 10 });
+    }
+    engine.dispose();
+  });
+
+  it("wraps the reported position at the loop end", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(11);
+    engine.setLoop(loop);
+    await engine.play();
+    created.contexts[0].currentTime = 0.06 + 0.5;
+    expect(engine.getPosition()).toBeCloseTo(11.5, 6);
+    created.contexts[0].currentTime = 0.06 + 1.5;
+    expect(engine.getPosition()).toBeCloseTo(10.5, 6);
+    engine.dispose();
+  });
+
+  it("clears a range that is too short to be a loop", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setLoop({ start: 5, end: 5.1 });
+    expect(engine.getSnapshot().loop).toBeNull();
+    engine.dispose();
+  });
+
+  it("paused: moves the playhead to the loop start when it is outside", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(3);
+    engine.setLoop(loop);
+    expect(engine.getPosition()).toBe(10);
+    engine.dispose();
+  });
+
+  it("playing: a range that holds the playhead applies without restarting", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(11);
+    await engine.play();
+    const sources = [...created.sources];
+    created.contexts[0].currentTime = 0.06 + 0.25;
+    engine.setLoop(loop);
+    expect(created.sources).toHaveLength(sources.length);
+    expect(sources.every((s) => s.loop && s.loopStart === 10 && s.loopEnd === 12 && !s.stopped)).toBe(true);
+    expect(engine.getPosition()).toBeCloseTo(11.25, 6);
+    created.contexts[0].currentTime = 0.06 + 1.25;
+    expect(engine.getPosition()).toBeCloseTo(10.25, 6);
+    engine.dispose();
+  });
+
+  it("playing: a range away from the playhead restarts inside it", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    await engine.play();
+    const first = [...created.sources];
+    engine.setLoop(loop);
+    expect(first.every((s) => s.stopped)).toBe(true);
+    expect(created.sources.slice(first.length).map((s) => s.offset)).toEqual([10, 10, 10]);
+    expect(engine.getPosition()).toBe(10);
+    engine.dispose();
+  });
+
+  it("clearing it while playing lets the stems run on without a gap", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(11);
+    engine.setLoop(loop);
+    await engine.play();
+    const sources = [...created.sources];
+    created.contexts[0].currentTime = 0.06 + 1.5;
+    engine.clearLoop();
+    expect(engine.getSnapshot().loop).toBeNull();
+    expect(sources.every((s) => !s.loop && !s.stopped)).toBe(true);
+    expect(engine.getPosition()).toBeCloseTo(10.5, 6);
+    created.contexts[0].currentTime += 1;
+    expect(engine.getPosition()).toBeCloseTo(11.5, 6);
+    engine.dispose();
+  });
+
+  it("seeking outside the loop drops it; inside keeps it", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setLoop(loop);
+    engine.seek(11.5);
+    expect(engine.getSnapshot().loop).toEqual(loop);
+    engine.seek(20);
+    expect(engine.getSnapshot().loop).toBeNull();
+    engine.dispose();
+  });
+
+  it("schedules clicks on both sides of the wrap", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setTimeline({
+      beats: [],
+      clicks: [
+        { time: 10.1, accent: false },
+        { time: 10.6, accent: false },
+        { time: 11.8, accent: true },
+      ],
+      cues: [],
+    });
+    engine.seek(11.5);
+    engine.setLoop(loop);
+    await engine.play();
+    const ctx = created.contexts[0];
+    for (let step = 0; step < 26; step += 1) {
+      ctx.currentTime += 0.1;
+      vi.advanceTimersByTime(25);
+    }
+    const clicks = created.sources.slice(3).map((s) => s.startedAt as number);
+    // 11.8 is 0.3 s after the start; the wrap at 12.0 comes 0.5 s in, so 10.1 and 10.6 follow at
+    // 0.6 s and 1.1 s; the next lap (2 s long) brings 11.8 again 2.3 s in.
+    const base = 0.06;
+    const expected = [0.3, 0.6, 1.1, 2.3].map((t) => base + t);
+    expect(clicks.slice(0, 4).map((t) => Math.round(t * 1000) / 1000)).toEqual(
+      expected.map((t) => Math.round(t * 1000) / 1000),
+    );
+    engine.dispose();
+  });
+});
+
+describe("StudioEngine.exportMix", () => {
+  class FakeOffline {
+    static last: FakeOffline | null = null;
+    destination = {};
+    sources: FakeSource[] = [];
+    gains: FakeGain[] = [];
+    constructor(
+      public channels: number,
+      public length: number,
+      public sampleRate: number,
+    ) {
+      FakeOffline.last = this;
+    }
+    createBufferSource() {
+      const source = new FakeSource();
+      this.sources.push(source);
+      return source;
+    }
+    createGain() {
+      const gain = new FakeGain();
+      this.gains.push(gain);
+      return gain;
+    }
+    createStereoPanner() {
+      return { pan: { value: 0 }, connect() {} };
+    }
+    async suspend() {}
+    async resume() {}
+    async startRendering() {
+      const loud = new Float32Array(this.length).fill(2);
+      const quiet = new Float32Array(this.length).fill(-0.5);
+      return { numberOfChannels: 2, sampleRate: this.sampleRate, getChannelData: (i: number) => (i ? quiet : loud) };
+    }
+  }
+
+  beforeEach(() => {
+    decodedFrames = 4410;
+    FakeOffline.last = null;
+    vi.stubGlobal("OfflineAudioContext", FakeOffline);
+  });
+
+  it("renders only the audible stems at their gain and returns a WAV", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.toggleMute("drums");
+    engine.setVolume("bass", 0.5);
+    const progress: string[] = [];
+    const result = await engine.exportMix({
+      bitDepth: 16,
+      includeClick: false,
+      includeCues: false,
+      onProgress: ({ phase }) => progress.push(phase),
+    });
+    const offline = FakeOffline.last as FakeOffline;
+    expect(offline.sources).toHaveLength(2);
+    expect(offline.gains.map((g) => g.gain.value)).toEqual([0.5, 1]);
+    expect(offline.length).toBe(4410);
+    expect(result.blob.type).toBe("audio/wav");
+    expect(result.blob.size).toBe(44 + 4410 * 4);
+    // The fake render peaks at 2.0, so the guard took 6 dB off.
+    expect(result.reducedDb).toBeCloseTo(6.02, 2);
+    expect(progress).toContain("mix");
+    expect(progress.at(-1)).toBe("encode");
+    engine.dispose();
+  });
+
+  it("refuses before the stems are ready and stops when cancelled", async () => {
+    const engine = new StudioEngine();
+    await expect(
+      engine.exportMix({ bitDepth: 16, includeClick: false, includeCues: false }),
+    ).rejects.toMatchObject({ kind: "notReady" });
+    await ready(engine);
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      engine.exportMix({ bitDepth: 24, includeClick: false, includeCues: false, signal: abort.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    engine.dispose();
+  });
+
+  it("downloads the WAV stems for full quality and mixes those", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        fetched.push(url);
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      }),
+    );
+    decodedFrames = 8820;
+    await engine.exportMix({
+      bitDepth: 24,
+      includeClick: false,
+      includeCues: false,
+      fullQuality: sources.map((s) => ({ name: s.name, url: `${s.url}.wav` })),
+    });
+    expect(fetched).toEqual(["http://x/drums.wav", "http://x/bass.wav", "http://x/vocals.wav"]);
+    expect((FakeOffline.last as FakeOffline).length).toBe(8820);
+    engine.dispose();
+  });
+
+  it("reports a failed full-quality download as such", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 403 })));
+    await expect(
+      engine.exportMix({
+        bitDepth: 16,
+        includeClick: false,
+        includeCues: false,
+        fullQuality: [{ name: "drums", url: "http://x/drums.wav" }],
+      }),
+    ).rejects.toMatchObject({ kind: "download" });
+    engine.dispose();
   });
 });

@@ -1,0 +1,17 @@
+.band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--paper) 10%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--paper-dim),
+    inset -1px 0 0 var(--paper-dim);
+  pointer-events: none;
+}
+
+.band[data-preview] {
+  background: color-mix(in srgb, var(--paper) 6%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--graphite),
+    inset -1px 0 0 var(--graphite);
+}

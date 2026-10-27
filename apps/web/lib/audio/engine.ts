@@ -16,7 +16,18 @@
  */
 import type { SectionName } from "@/lib/api";
 import { clickWave } from "./click";
-import { DEFAULT_MIX, stemGains, type StemMix } from "./mix";
+import { clampPan, DEFAULT_MIX, stemGains, type StemMix } from "./mix";
+import { applyPresetToMix, type PresetId } from "./presets";
+import { inLoop, normalizeLoop, songPositionAt, windowSegments, type LoopRange } from "./loop";
+import {
+  encodeWav,
+  guardDb,
+  levelGuard,
+  mixdownStems,
+  peakOf,
+  renderMixdown,
+  type BitDepth,
+} from "./mixdown";
 import { bucketCount, computePeaks, type Peaks } from "./peaks";
 import {
   eventsInWindow,
@@ -67,6 +78,32 @@ export interface EngineState {
   cuesOn: boolean;
   cueLanguage: CueLanguage;
   cuesStatus: "idle" | "loading" | "ready" | "error";
+  /** Section A-B being repeated, or null. Playback never leaves it while it is set. */
+  loop: LoopRange | null;
+}
+
+export interface MixExportOptions {
+  bitDepth: BitDepth;
+  includeClick: boolean;
+  includeCues: boolean;
+  /** WAV stems to download and use instead of what the studio has loaded (full quality). */
+  fullQuality?: readonly StemSource[];
+  onProgress?: (progress: { phase: "download" | "mix" | "encode"; fraction: number }) => void;
+  signal?: AbortSignal;
+}
+
+export interface MixExport {
+  blob: Blob;
+  seconds: number;
+  /** dB the level guard took off to keep the summed stems from clipping; 0 when it did nothing. */
+  reducedDb: number;
+}
+
+/** Why a mix could not be exported (cancelling rejects with an AbortError instead). */
+export class MixExportError extends Error {
+  constructor(readonly kind: "notReady" | "download" | "decode" | "cues" | "render") {
+    super(`mix export failed: ${kind}`);
+  }
 }
 
 export interface EngineTimeline {
@@ -83,10 +120,13 @@ interface CueSample {
 
 interface Run {
   ctxStart: number;
+  /** Song position at `ctxStart`. A live loop change moves both so the pair stays consistent. */
   songStart: number;
-  scheduledTo: number;
+  /** Seconds since `ctxStart` that click and cue events were already scheduled up to. */
+  scheduledElapsed: number;
   sources: AudioBufferSourceNode[];
-  oneShots: Set<AudioBufferSourceNode>;
+  /** Click and cue sources that have not finished, with the context time each one starts at. */
+  oneShots: Map<AudioBufferSourceNode, number>;
   lastCue: GainNode | null;
 }
 
@@ -115,6 +155,7 @@ function initialState(): EngineState {
     cuesOn: false,
     cueLanguage: "es",
     cuesStatus: "idle",
+    loop: null,
   };
 }
 
@@ -148,6 +189,7 @@ export class StudioEngine {
   private cueBus: GainNode | null = null;
   private clickBuffers: { accent: AudioBuffer; normal: AudioBuffer } | null = null;
   private readonly stemNodes = new Map<StemName, GainNode>();
+  private readonly panNodes = new Map<StemName, StereoPannerNode>();
   private readonly buffers = new Map<StemName, AudioBuffer>();
   private readonly cueLibrary = new Map<CueLanguage, Map<SectionName, CueSample>>();
 
@@ -201,6 +243,7 @@ export class StudioEngine {
     };
     this.clickBuffers = { accent: make(true), normal: make(false) };
     this.stemNodes.clear();
+    this.panNodes.clear();
     return ctx;
   }
 
@@ -241,6 +284,7 @@ export class StudioEngine {
       stems: emptyStems(),
       playing: false,
       duration: 0,
+      loop: null,
     });
 
     try {
@@ -276,7 +320,9 @@ export class StudioEngine {
     this.playToken += 1;
     this.stopRun();
     for (const node of this.stemNodes.values()) node.disconnect();
+    for (const node of this.panNodes.values()) node.disconnect();
     this.stemNodes.clear();
+    this.panNodes.clear();
     this.buffers.clear();
     this.pausedAt = 0;
   }
@@ -295,7 +341,16 @@ export class StudioEngine {
     );
     const peaks = computePeaks(channels, bucketCount(buffer.duration));
     const node = ctx.createGain();
-    node.connect(ctx.destination);
+    // Stem -> gain -> panner -> out. A browser without StereoPannerNode just plays centred.
+    if (typeof ctx.createStereoPanner === "function") {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = this.state.mix[name].pan;
+      node.connect(panner);
+      panner.connect(ctx.destination);
+      this.panNodes.set(name, panner);
+    } else {
+      node.connect(ctx.destination);
+    }
     this.stemNodes.set(name, node);
     this.buffers.set(name, buffer);
     this.setStem(name, { phase: "ready", peaks });
@@ -307,7 +362,7 @@ export class StudioEngine {
     const { run, ctx } = this;
     if (!run || !ctx) return this.pausedAt;
     const elapsed = Math.max(0, ctx.currentTime - run.ctxStart);
-    return Math.min(this.state.duration, run.songStart + elapsed);
+    return Math.min(this.state.duration, songPositionAt(run.songStart, elapsed, this.state.loop));
   }
 
   readonly toggle = () => {
@@ -325,7 +380,9 @@ export class StudioEngine {
       return;
     }
     if (this.disposed || token !== this.playToken || this.state.playing) return;
-    const from = this.pausedAt >= this.state.duration - 0.05 ? 0 : this.pausedAt;
+    const { loop } = this.state;
+    let from = this.pausedAt >= this.state.duration - 0.05 ? 0 : this.pausedAt;
+    if (loop && !inLoop(loop, from)) from = loop.start;
     this.startRun(ctx, from);
     this.set({ playing: true });
   }
@@ -340,6 +397,8 @@ export class StudioEngine {
 
   seek(seconds: number) {
     const target = Math.min(this.state.duration, Math.max(0, seconds));
+    // Jumping out of the loop leaves it: the band would otherwise promise a wrap that no longer happens.
+    if (this.state.loop && !inLoop(this.state.loop, target)) this.set({ loop: null });
     if (this.run && this.ctx) {
       this.stopRun();
       this.startRun(this.ctx, target);
@@ -358,15 +417,16 @@ export class StudioEngine {
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(node);
+      this.applyLoop(source, this.state.loop);
       source.start(ctxStart, offset);
       sources.push(source);
     }
     this.run = {
       ctxStart,
       songStart: offset,
-      scheduledTo: offset,
+      scheduledElapsed: 0,
       sources,
-      oneShots: new Set(),
+      oneShots: new Map(),
       lastCue: null,
     };
     this.timer = setInterval(this.tick, TICK_MS);
@@ -380,7 +440,7 @@ export class StudioEngine {
     this.run = null;
     if (!run) return;
     for (const source of run.sources) stop(source);
-    for (const source of run.oneShots) stop(source);
+    for (const source of run.oneShots.keys()) stop(source);
   }
 
   private readonly tick = () => {
@@ -393,35 +453,40 @@ export class StudioEngine {
       return;
     }
     const now = ctx.currentTime;
-    const horizon = run.songStart + (now + LOOKAHEAD - run.ctxStart);
-    const from = Math.max(run.scheduledTo, run.songStart);
-    if (horizon <= from) return;
-    run.scheduledTo = horizon;
+    const from = Math.max(run.scheduledElapsed, 0);
+    const to = now + LOOKAHEAD - run.ctxStart;
+    if (to <= from) return;
+    run.scheduledElapsed = to;
 
+    // Each stretch is continuous song time; a wrap of the loop starts a new one, so events on
+    // both sides of it land at the right moment on the context clock.
+    const stretches = windowSegments(run.songStart, from, to, this.state.loop);
     const clickBuffers = this.clickBuffers;
-    if (clickBuffers && this.clickBus) {
-      for (const event of eventsInWindow(this.timeline.clicks, from, horizon)) {
-        const at = run.ctxStart + (event.time - run.songStart);
-        if (at < now - 0.005) continue;
-        this.oneShot(run, event.accent ? clickBuffers.accent : clickBuffers.normal, this.clickBus, at);
-      }
-    }
-
     const library = this.cueLibrary.get(this.state.cueLanguage);
-    if (library && this.cueBus) {
-      for (const cue of eventsInWindow(this.timeline.cues, from, horizon)) {
-        const sample = library.get(cue.name);
-        const at = run.ctxStart + (cue.time - run.songStart);
-        if (!sample || at < now - 0.005) continue;
-        // A cue still sounding when the next one starts is faded out there, as in the pack.
-        if (run.lastCue) {
-          run.lastCue.gain.setValueAtTime(1, Math.max(now, at - 0.003));
-          run.lastCue.gain.linearRampToValueAtTime(0, Math.max(now, at));
+    for (const stretch of stretches) {
+      const when = (time: number) => run.ctxStart + stretch.at + (time - stretch.from);
+      if (clickBuffers && this.clickBus) {
+        for (const event of eventsInWindow(this.timeline.clicks, stretch.from, stretch.to)) {
+          const at = when(event.time);
+          if (at < now - 0.005) continue;
+          this.oneShot(run, event.accent ? clickBuffers.accent : clickBuffers.normal, this.clickBus, at);
         }
-        const gain = ctx.createGain();
-        gain.connect(this.cueBus);
-        this.oneShot(run, sample.buffer, gain, at, sample.onset);
-        run.lastCue = gain;
+      }
+      if (library && this.cueBus) {
+        for (const cue of eventsInWindow(this.timeline.cues, stretch.from, stretch.to)) {
+          const sample = library.get(cue.name);
+          const at = when(cue.time);
+          if (!sample || at < now - 0.005) continue;
+          // A cue still sounding when the next one starts is faded out there, as in the pack.
+          if (run.lastCue) {
+            run.lastCue.gain.setValueAtTime(1, Math.max(now, at - 0.003));
+            run.lastCue.gain.linearRampToValueAtTime(0, Math.max(now, at));
+          }
+          const gain = ctx.createGain();
+          gain.connect(this.cueBus);
+          this.oneShot(run, sample.buffer, gain, at, sample.onset);
+          run.lastCue = gain;
+        }
       }
     }
   };
@@ -436,8 +501,61 @@ export class StudioEngine {
       run.oneShots.delete(source);
       source.disconnect();
     };
-    source.start(Math.max(at, ctx.currentTime), offset);
-    run.oneShots.add(source);
+    const startAt = Math.max(at, ctx.currentTime);
+    source.start(startAt, offset);
+    run.oneShots.set(source, startAt);
+  }
+
+  /* ------------------------------------------------------------- loop */
+
+  private applyLoop(source: AudioBufferSourceNode, loop: LoopRange | null) {
+    source.loop = loop !== null;
+    if (loop) {
+      source.loopStart = loop.start;
+      source.loopEnd = loop.end;
+    }
+  }
+
+  /**
+   * Repeats `range` (null clears it). The stems wrap natively inside their buffers, which is
+   * sample-accurate; clicks and cues are scheduled across the wrap by `windowSegments`. While
+   * playing, a range that contains the playhead takes effect without a gap; one that does not
+   * moves the playhead to its start. Paused, the playhead moves there so Play starts the loop.
+   */
+  setLoop(range: LoopRange | null) {
+    if (this.disposed) return;
+    const next = range ? normalizeLoop(range, this.state.duration) : null;
+    const { run, ctx } = this;
+    const position = run && ctx ? this.getPosition() : this.pausedAt;
+    this.set({ loop: next });
+    if (!run || !ctx) {
+      if (next && !inLoop(next, position)) this.pausedAt = next.start;
+      return;
+    }
+    if (next && !inLoop(next, position)) {
+      this.stopRun();
+      this.startRun(ctx, next.start);
+      return;
+    }
+    const now = ctx.currentTime;
+    // Events scheduled ahead assumed the old wrap; drop the ones not yet sounding and schedule again.
+    for (const [source, startsAt] of run.oneShots) {
+      if (startsAt > now) {
+        stop(source);
+        run.oneShots.delete(source);
+      }
+    }
+    if (now >= run.ctxStart) {
+      run.songStart = position;
+      run.ctxStart = now;
+    }
+    run.scheduledElapsed = 0;
+    for (const source of run.sources) this.applyLoop(source, next);
+    this.tick();
+  }
+
+  clearLoop() {
+    this.setLoop(null);
   }
 
   /* -------------------------------------------------------------- mix */
@@ -451,8 +569,38 @@ export class StudioEngine {
     }
   }
 
+  private applyPans() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (const [name, node] of this.panNodes) {
+      node.pan.setTargetAtTime(this.state.mix[name].pan, ctx.currentTime, GAIN_SMOOTHING);
+    }
+  }
+
   private setMix(name: StemName, patch: Partial<StemMix>) {
     this.set({ mix: { ...this.state.mix, [name]: { ...this.state.mix[name], ...patch } } });
+    this.applyGains();
+  }
+
+  setPan(name: StemName, pan: number) {
+    this.set({ mix: { ...this.state.mix, [name]: { ...this.state.mix[name], pan: clampPan(pan) } } });
+    this.applyPans();
+  }
+
+  /** Sets remembered pans in one go (before they were loaded the lanes were centred). */
+  restorePans(pans: Partial<Record<StemName, number>>) {
+    const mix = { ...this.state.mix };
+    for (const name of STEM_ORDER) {
+      const pan = pans[name];
+      if (pan !== undefined) mix[name] = { ...mix[name], pan: clampPan(pan) };
+    }
+    this.set({ mix });
+    this.applyPans();
+  }
+
+  /** Replaces the mute/solo layout with a quick mix; volume and pan stay. */
+  applyPreset(id: PresetId) {
+    this.set({ mix: applyPresetToMix(id, this.state.mix, this.state.order) });
     this.applyGains();
   }
 
@@ -464,6 +612,86 @@ export class StudioEngine {
   }
   toggleSolo(name: StemName) {
     this.setMix(name, { solo: !this.state.mix[name].solo });
+  }
+
+  /* ----------------------------------------------------------- export */
+
+  /**
+   * Renders the current mix (gains, mutes, solos, pans; no loop) offline into a WAV. Uses the
+   * loaded buffers, or downloads `fullQuality` sources first when the studio holds previews.
+   */
+  async exportMix(options: MixExportOptions): Promise<MixExport> {
+    const { bitDepth, signal } = options;
+    const report = options.onProgress ?? (() => {});
+    const aborted = () => new DOMException("Export cancelled", "AbortError");
+    if (this.disposed || this.state.status !== "ready") throw new MixExportError("notReady");
+    const ctx = this.ensureContext();
+    const abort = signal ?? new AbortController().signal;
+
+    let source: ReadonlyMap<StemName, AudioBuffer> = this.buffers;
+    if (options.fullQuality?.length) {
+      const full = new Map<StemName, AudioBuffer>();
+      let done = 0;
+      report({ phase: "download", fraction: 0 });
+      for (const wav of options.fullQuality) {
+        if (abort.aborted) throw aborted();
+        try {
+          const bytes = await fetchStemBytes(wav.url, abort, () => {});
+          full.set(wav.name, await decodeStemBytes((data) => ctx.decodeAudioData(data), bytes));
+        } catch (error) {
+          if (abort.aborted) throw aborted();
+          const failure = (error as { failure?: LoadFailure }).failure;
+          throw new MixExportError(failure === "decode" ? "decode" : "download");
+        }
+        done += 1;
+        report({ phase: "download", fraction: done / options.fullQuality.length });
+      }
+      source = full;
+    }
+    if (abort.aborted) throw aborted();
+
+    const stems = mixdownStems(this.state.order, this.state.mix, source);
+    let frames = 0;
+    for (const buffer of source.values()) frames = Math.max(frames, buffer.length);
+    const sampleRate = source.values().next().value?.sampleRate ?? ctx.sampleRate;
+
+    let cues: Parameters<typeof renderMixdown>[0]["cues"];
+    if (options.includeCues && this.timeline.cues.length > 0) {
+      await this.loadCues(this.state.cueLanguage);
+      const library = this.cueLibrary.get(this.state.cueLanguage);
+      if (!library) throw new MixExportError("cues");
+      cues = { library, placements: this.timeline.cues };
+    }
+    const click =
+      options.includeClick && this.clickBuffers
+        ? { buffers: this.clickBuffers, events: this.timeline.clicks }
+        : undefined;
+
+    let rendered: Awaited<ReturnType<typeof renderMixdown>>;
+    try {
+      rendered = await renderMixdown({
+        stems,
+        length: frames,
+        sampleRate,
+        click,
+        cues,
+        signal: abort,
+        onProgress: (fraction) => report({ phase: "mix", fraction }),
+      });
+    } catch (error) {
+      if (abort.aborted || (error as { name?: string }).name === "AbortError") throw aborted();
+      throw new MixExportError("render");
+    }
+
+    report({ phase: "encode", fraction: 0 });
+    const scale = levelGuard(peakOf(rendered.channels));
+    const wav = encodeWav(rendered.channels, rendered.sampleRate, bitDepth, scale);
+    report({ phase: "encode", fraction: 1 });
+    return {
+      blob: new Blob([wav], { type: "audio/wav" }),
+      seconds: frames / rendered.sampleRate,
+      reducedDb: guardDb(scale),
+    };
   }
 
   /* ------------------------------------------------------ click, cues */
@@ -532,6 +760,7 @@ export class StudioEngine {
     this.stopRun();
     this.buffers.clear();
     this.stemNodes.clear();
+    this.panNodes.clear();
     this.cueLibrary.clear();
     const ctx = this.ctx;
     this.ctx = null;

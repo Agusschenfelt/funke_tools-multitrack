@@ -111,7 +111,11 @@ export function previewWindow(
   alignment: PreviewAlignment,
   decodedRate: number = alignment.sampleRate,
 ): { start: number; length: number } {
-  const scale = decodedRate / alignment.sampleRate;
+  // A zero or non-finite rate would turn every count into NaN; leave the decode untouched instead.
+  if (!(alignment.sampleRate > 0) || !Number.isFinite(alignment.sampleRate)) {
+    return { start: 0, length: decodedFrames };
+  }
+  const scale = decodedRate > 0 && Number.isFinite(decodedRate) ? decodedRate / alignment.sampleRate : 1;
   const samples = Math.round(alignment.samples * scale);
   const priming = Math.round(alignment.primingSamples * scale);
   const delayed = decodedFrames - samples >= priming;

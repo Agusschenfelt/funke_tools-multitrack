@@ -9,7 +9,8 @@ Stages:
 * ``analyze_job``: decoding, analyzing (beats, key and loudness run inside one library call),
   sections, saving, done. Section files: ``sections.detected.json`` always holds the latest
   detector output; ``sections.json`` is what users read and edit, so it is written only when it
-  does not exist yet or when ``overwrite_sections=True`` is passed explicitly.
+  does not exist yet or when ``overwrite_sections=True`` is passed explicitly (and, when the caller
+  also passes ``expected_sections_sha256``, only if the file still has that hash).
 * ``separate_job``: decoding, separating, saving, done. Besides the float WAV stems it stores a
   compressed preview of each (``stems/preview/<stem>.m4a``) for the studio; previews are optional,
   so an encoding failure is logged and the job still succeeds with WAV stems only.
@@ -22,6 +23,8 @@ and only that, to recover the outcome of a job RQ has forgotten.
 """
 
 import functools
+import hashlib
+import inspect
 import json
 import logging
 import tempfile
@@ -80,6 +83,22 @@ def set_stage(stage: str) -> None:
     job.save_meta()
 
 
+def _known_kwargs(func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Drop (with a warning) keyword arguments ``func`` does not declare.
+
+    During a rolling deploy the API may enqueue arguments a worker of the previous version does
+    not know yet, or the reverse; ignoring them keeps the job running instead of a TypeError.
+    The allowlist of job functions (``security.py``) is unaffected: only arguments are filtered.
+    """
+    params = inspect.signature(func).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    unknown = sorted(k for k in kwargs if k not in params)
+    if unknown:
+        log.warning("%s ignores unknown job arguments: %s", func.__name__, ", ".join(unknown))
+    return {k: v for k, v in kwargs.items() if k in params}
+
+
 def tracked(func: Callable[..., Any]) -> Callable[..., Any]:
     """Lock the song while the job runs and record its result under ``jobs/<job_id>.json``.
 
@@ -89,6 +108,7 @@ def tracked(func: Callable[..., Any]) -> Callable[..., Any]:
 
     @functools.wraps(func)
     def wrapper(song_id: str, *args: Any, **kwargs: Any) -> Any:
+        kwargs = _known_kwargs(func, kwargs)
         job_id = getattr(get_current_job(), "id", None)
         if not job_id:
             return func(song_id, *args, **kwargs)
@@ -147,6 +167,13 @@ def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, 
     return audio, name
 
 
+def _sections_match(storage: Storage, song_id: str, expected_sha256: str | None) -> bool:
+    """Whether sections.json is still what the caller saw; always true when it sent no hash."""
+    if expected_sha256 is None:
+        return True
+    return hashlib.sha256(storage.get_bytes(song_id, SECTIONS)).hexdigest() == expected_sha256
+
+
 @tracked
 def analyze_job(
     song_id: str,
@@ -154,6 +181,7 @@ def analyze_job(
     sections: bool = True,
     source_name: str | None = None,
     overwrite_sections: bool = False,
+    expected_sections_sha256: str | None = None,
 ) -> dict:
     """Decode the stored source, analyze it and (optionally) detect sections.
 
@@ -163,6 +191,9 @@ def analyze_job(
     Sections: with ``sections=True`` the detector output is always saved as
     ``sections.detected.json``; ``sections.json`` (the user-facing, editable file) is written only
     when absent or when ``overwrite_sections`` is true, so a re-run never silently replaces edits.
+    ``expected_sections_sha256`` guards a forced overwrite against a user edit saved while the job
+    ran: it is the hash of ``sections.json`` when the job was enqueued ("" when it did not exist),
+    and the overwrite is skipped (``sections_overwritten`` false) if the file no longer matches.
     With ``sections=False`` neither file is touched. A detection failure raises before anything
     is saved, so a failed run changes no file. The song id is derived from the audio hash, so an
     existing ``sections.json`` always describes the same audio.
@@ -187,8 +218,11 @@ def analyze_job(
         if detected is not None:
             payload = detected.model_dump_json(indent=2).encode()
             storage.put_bytes(song_id, SECTIONS_DETECTED, payload)
-            if overwrite_sections or not storage.exists(song_id, SECTIONS):
-                overwritten = storage.exists(song_id, SECTIONS)
+            exists = storage.exists(song_id, SECTIONS)
+            if not exists:
+                storage.put_bytes(song_id, SECTIONS, payload)
+            elif overwrite_sections and _sections_match(storage, song_id, expected_sections_sha256):
+                overwritten = True
                 storage.put_bytes(song_id, SECTIONS, payload)
     set_stage("done")
     grid = analysis.grid

@@ -1,27 +1,35 @@
 "use client";
 
-import { useCallback, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useRef, type KeyboardEvent } from "react";
 import type { StudioEngine } from "@/lib/audio/engine";
 import { formatClock } from "@/lib/audio/grid";
 import { minimapSeekTarget } from "@/lib/audio/minimapKeys";
+import type { LoopRange } from "@/lib/audio/loop";
 import type { StripGroup } from "@/lib/strip";
 import { useFrame } from "./hooks";
+import { LoopBand } from "./LoopBand";
 import { Playhead } from "./Playhead";
+import { useLoopSelect } from "./useLoopSelect";
 import styles from "./Transport.module.css";
 
-/** The whole song at a glance, sections to scale. Click to seek; arrows move a bar, Page keys four. */
+/**
+ * The whole song at a glance, sections to scale. Click to seek, drag to loop a range of bars
+ * (Alt/Option: free); arrows move a bar, Page keys four.
+ */
 export function Minimap({
   engine,
   groups,
   downbeats,
   duration,
   activeGroup,
+  loop,
 }: {
   engine: StudioEngine;
   groups: readonly StripGroup[];
   downbeats: readonly number[];
   duration: number;
   activeGroup: number | null;
+  loop: LoopRange | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Assistive technology reads the position from attributes kept current outside React renders.
@@ -31,11 +39,7 @@ export function Minimap({
   }, []);
   useFrame(engine, announce);
 
-  const seek = (event: MouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width === 0) return;
-    engine.seek(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * duration);
-  };
+  const select = useLoopSelect({ engine, duration, downbeats, area: ref });
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = minimapSeekTarget(event.key, {
@@ -58,8 +62,8 @@ export function Minimap({
       aria-valuemin={0}
       aria-valuemax={Math.round(duration)}
       aria-valuenow={0}
-      onClick={seek}
       onKeyDown={onKeyDown}
+      {...select.handlers}
     >
       {duration > 0 &&
         groups.map((group, g) => (
@@ -73,6 +77,7 @@ export function Minimap({
             aria-hidden="true"
           />
         ))}
+      <LoopBand range={select.preview ?? loop} duration={duration} preview={select.preview !== null} />
       <Playhead engine={engine} duration={duration} />
     </div>
   );

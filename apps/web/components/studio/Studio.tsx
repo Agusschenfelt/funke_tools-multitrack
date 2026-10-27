@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   describeError,
@@ -14,13 +14,20 @@ import {
 } from "@/lib/api";
 import { StudioEngine, type LoadFailure } from "@/lib/audio/engine";
 import { beatsPerBar } from "@/lib/audio/grid";
+import { loopLabel as describeLoop, snapLoop } from "@/lib/audio/loop";
 import { stemGains } from "@/lib/audio/mix";
+import { loadPans, savePans } from "@/lib/audio/panStore";
+import { detectPreset } from "@/lib/audio/presets";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
-import { orderStems, studioSources } from "@/lib/audio/stems";
+import { orderStems, STEM_LABEL, studioSources } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
+import { chordsAround, type Chord } from "@/lib/chords";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
+import { ChordLane } from "./ChordLane";
 import { Lane } from "./Lane";
+import { MixBar } from "./MixBar";
+import { MixExport } from "./MixExport";
 import { SectionEditor, SectionToolbar } from "./SectionPanel";
 import { SectionStrip } from "./SectionStrip";
 import { SongBar } from "./SongBar";
@@ -249,11 +256,32 @@ function StudioStage({
   );
   useFrame(engine, track);
 
+  // The chord under the playhead and the next one; state changes only when either moves on.
+  const chords = useMemo<readonly Chord[]>(() => analysis.chords ?? [], [analysis.chords]);
+  const [around, setAround] = useState({ current: -1, next: -1 });
+  const trackChords = useCallback(
+    (position: number) => {
+      const next = chordsAround(chords, position);
+      setAround((prev) =>
+        prev.current === next.current && prev.next === next.next ? prev : next,
+      );
+    },
+    [chords],
+  );
+  useFrame(engine, trackChords);
+
   // Space plays and pauses unless it would press a control or edit text.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat || event.ctrlKey || event.metaKey) return;
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
+      // L clears the loop from anywhere except a text field.
+      if (event.key === "l" || event.key === "L") {
+        if (target?.closest("input, textarea, select, [contenteditable]")) return;
+        engine.clearLoop();
+        return;
+      }
+      if (event.code !== "Space") return;
       if (target?.closest("button, a, input, select, textarea, [role='slider']")) return;
       event.preventDefault();
       engine.toggle();
@@ -263,6 +291,29 @@ function StudioStage({
   }, [engine]);
 
   const gains = stemGains(state.mix);
+  const [ruler, setRuler] = useState<"bars" | "time">(hasGrid ? "bars" : "time");
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportId = useId();
+  const wavs = useMemo(() => orderStems(song.artifacts.stems), [song]);
+  const wavUrl = useMemo(() => new Map(wavs.map((s) => [s.name, s.url])), [wavs]);
+  const title = titleFromFilename(song.filename);
+  const silent = names.every((name) => gains[name] === 0);
+  const preset = detectPreset(state.mix, state.order);
+
+  // Pans are remembered per song: restored once the lanes exist, saved on every change after that.
+  const restoredPans = useRef(false);
+  const panKey = names.map((name) => state.mix[name].pan).join(",");
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    if (!restoredPans.current) {
+      restoredPans.current = true;
+      engine.restorePans(loadPans(songId));
+      return;
+    }
+    savePans(songId, Object.fromEntries(names.map((name) => [name, state.mix[name].pan])));
+    // panKey stands for the pan values; the rest of state.mix is irrelevant here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, songId, state.status, panKey]);
   const activeGroup = active ? active.group : null;
   const activeSpan = active ? groups[active.group]?.spans[active.span] ?? null : null;
   const activeIndex = flatIndex(groups, active);
@@ -281,12 +332,16 @@ function StudioStage({
   };
   const loadedCount = names.filter((name) => state.stems[name].phase === "ready").length;
   const downloaded = names.reduce((sum, name) => sum + state.stems[name].loaded, 0);
+  const sizeNote =
+    state.status === "ready" && downloaded > 0
+      ? `${compressed ? "Vista previa comprimida" : "Pistas sin comprimir"}: ${formatBytes(downloaded)} descargados. El pack exportado conserva la calidad completa.`
+      : null;
 
   return (
     <>
       <SongBar
         songId={songId}
-        title={titleFromFilename(song.filename)}
+        title={title}
         analysis={analysis}
         dirty={editor.dirty}
         saving={editor.saving}
@@ -307,12 +362,7 @@ function StudioStage({
         {state.status === "ready" ? "Pistas listas" : ""}
       </p>
 
-      {state.status === "ready" && downloaded > 0 && (
-        <p className={styles.sizeNote}>
-          {compressed ? "Vista previa comprimida" : "Pistas sin comprimir"}: {formatBytes(downloaded)}{" "}
-          descargados. El pack exportado conserva la calidad completa.
-        </p>
-      )}
+      {sizeNote && <p className={styles.sizeNote}>{sizeNote}</p>}
 
       <div className={styles.stage}>
         <SectionToolbar
@@ -332,6 +382,8 @@ function StudioStage({
           downbeats={downbeats}
           estimatedUntil={grid?.extrapolated_until ?? null}
           duration={duration}
+          loop={state.loop}
+          ruler={ruler}
           activeIndex={activeIndex}
           selected={editor.selected}
           editedOnServer={editor.editedOnServer}
@@ -355,6 +407,38 @@ function StudioStage({
             />
           )}
         </div>
+        <MixBar
+          preset={preset}
+          disabled={state.status !== "ready"}
+          onPreset={(id) => engine.applyPreset(id)}
+          loopLabel={state.loop ? describeLoop(state.loop, downbeats, duration) : null}
+          canLoopSection={activeSpan !== null}
+          onLoopSection={() => {
+            if (!activeSpan) return;
+            const range = snapLoop(activeSpan.start, activeSpan.end, { downbeats, duration, snap: true });
+            if (range) engine.setLoop(range);
+          }}
+          onClearLoop={() => engine.clearLoop()}
+          ruler={ruler}
+          onRuler={setRuler}
+          exportOpen={exportOpen}
+          onToggleExport={() => setExportOpen((open) => !open)}
+          exportId={exportId}
+          note={sizeNote}
+        />
+        {exportOpen && (
+          <MixExport
+            id={exportId}
+            engine={engine}
+            title={title}
+            duration={duration}
+            compressed={compressed}
+            wavSources={wavs}
+            hasGrid={hasGrid}
+            silent={silent}
+            ready={state.status === "ready"}
+          />
+        )}
         <div className={lanes.lanes}>
           {names.map((name, index) => (
             <Lane
@@ -366,11 +450,15 @@ function StudioStage({
               audible={gains[name] > 0}
               duration={duration}
               activeSpan={activeSpan}
+              loop={state.loop}
+              downloadUrl={wavUrl.get(name)}
+              downloadName={`${title} - ${STEM_LABEL[name]}.wav`}
               index={index}
               count={names.length}
             />
           ))}
         </div>
+        <ChordLane engine={engine} chords={chords} duration={duration} current={around.current} />
       </div>
 
       <Transport
@@ -383,6 +471,8 @@ function StudioStage({
         duration={duration}
         activeGroup={activeGroup}
         hasGrid={hasGrid}
+        currentChord={chords[around.current]?.label ?? null}
+        nextChord={chords[around.next]?.label ?? null}
       />
     </>
   );
