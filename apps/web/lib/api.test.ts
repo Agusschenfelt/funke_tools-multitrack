@@ -192,6 +192,13 @@ describe("analysis grid validation", () => {
     expect(checkAnalysis(analysis(null)).grid).toBeNull();
   });
 
+  it("accepts a stored extrapolated_until, null or absent, and rejects a bad one", () => {
+    expect(isValidGrid({ ...grid, extrapolated_until: 30.2 })).toBe(true);
+    expect(isValidGrid({ ...grid, extrapolated_until: null })).toBe(true);
+    expect(isValidGrid({ ...grid, extrapolated_until: -1 })).toBe(false);
+    expect(isValidGrid({ ...grid, extrapolated_until: "30" })).toBe(false);
+  });
+
   it.each([
     ["NaN beat", { ...grid, beats: [0.5, Number.NaN] }],
     ["string beat", { ...grid, beats: [0.5, "1"] }],

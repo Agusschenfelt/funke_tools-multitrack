@@ -173,6 +173,28 @@
   color: var(--paper);
 }
 
+/* Estimated grid over a beatless intro: dashed bar lines and italic numbers, same ink. */
+.barEstimated {
+  border-left-style: dashed;
+  font-style: italic;
+}
+
+.barEstimated.barAnchor {
+  color: var(--paper-dim);
+}
+
+/* A dashed rule along the top of the ruler marks the whole estimated stretch; it carries the
+   tooltip, so it takes pointer events while the rest of the ruler lets clicks through. */
+.estimated {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  height: 0.5rem;
+  border-top: 1px dashed var(--graphite);
+  pointer-events: auto;
+  cursor: help;
+}
+
 @media (pointer: coarse) {
   .edge {
     display: none;

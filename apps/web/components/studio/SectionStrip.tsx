@@ -10,10 +10,15 @@ import { Playhead } from "./Playhead";
 import { seekFromClick } from "./Lane";
 import styles from "./SectionStrip.module.css";
 
+const ESTIMATED_ID = "estimated-grid-legend";
+export const ESTIMATED_GRID_LEGEND = "Grilla estimada (intro sin pulso claro)";
+
 interface SectionStripProps {
   engine: StudioEngine;
   sections: readonly Section[];
   downbeats: readonly number[];
+  /** Seconds before which the grid is estimated (beatless intro); null when it was all detected. */
+  estimatedUntil?: number | null;
   duration: number;
   /** Flat index of the section under the playhead. */
   activeIndex: number | null;
@@ -35,6 +40,7 @@ export function SectionStrip({
   engine,
   sections,
   downbeats,
+  estimatedUntil = null,
   duration,
   activeIndex,
   selected,
@@ -64,8 +70,10 @@ export function SectionStrip({
         duration,
         width,
         groups.flatMap((g) => (g.startBar === null ? [] : [g.startBar])),
+        undefined,
+        estimatedUntil,
       ),
-    [downbeats, duration, width, groups],
+    [downbeats, duration, width, groups, estimatedUntil],
   );
   const pct = (seconds: number) => `${(seconds / duration) * 100}%`;
   const canMove = downbeats.length > 0;
@@ -94,6 +102,7 @@ export function SectionStrip({
         className={styles.track}
         role="group"
         aria-label="Secciones de la canción"
+        aria-describedby={estimatedUntil ? ESTIMATED_ID : undefined}
         onClick={(event) => {
           if (event.target === event.currentTarget) seekFromClick(event, engine, duration);
         }}
@@ -194,12 +203,31 @@ export function SectionStrip({
               </div>
             );
           })}
+        {estimatedUntil ? (
+          <span id={ESTIMATED_ID} className="visually-hidden">
+            {ESTIMATED_GRID_LEGEND}
+          </span>
+        ) : null}
         <div className={styles.bars} aria-hidden="true">
+          {duration > 0 && estimatedUntil ? (
+            <span
+              className={styles.estimated}
+              style={{ width: pct(Math.min(estimatedUntil, duration)) }}
+              title={ESTIMATED_GRID_LEGEND}
+            />
+          ) : null}
           {duration > 0 &&
             ticks.map((tick) => (
               <span
                 key={tick.bar}
-                className={tick.anchor ? `${styles.bar} ${styles.barAnchor} mono` : `${styles.bar} mono`}
+                className={[
+                  styles.bar,
+                  tick.anchor ? styles.barAnchor : "",
+                  tick.estimated ? styles.barEstimated : "",
+                  "mono",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 style={{ left: pct(tick.time) }}
               >
                 {tick.bar}

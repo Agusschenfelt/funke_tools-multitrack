@@ -319,6 +319,7 @@ function StudioStage({
           engine={engine}
           sections={sections}
           downbeats={downbeats}
+          estimatedUntil={grid?.extrapolated_until ?? null}
           duration={duration}
           activeIndex={activeIndex}
           selected={editor.selected}

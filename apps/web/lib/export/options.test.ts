@@ -22,6 +22,7 @@ describe("toApiBody", () => {
       straight_grid: false,
       sample_rate: 44100,
       include_vocals: false,
+      extend_grid: true,
       language: "es",
     });
   });
@@ -36,6 +37,7 @@ describe("toApiBody", () => {
       subdivision: "eighth",
       clickSound: "cowbell",
       straightGrid: true,
+      extendGrid: false,
       language: "en",
     });
     expect(body).toMatchObject({
@@ -46,12 +48,19 @@ describe("toApiBody", () => {
       subdivision: "eighth",
       click_sound: "cowbell",
       straight_grid: true,
+      extend_grid: false,
       language: "en",
     });
   });
 });
 
 describe("parseOptions", () => {
+  it("defaults extendGrid on and keeps a stored false", () => {
+    expect(parseOptions({}).extendGrid).toBe(true);
+    expect(parseOptions({ extendGrid: false }).extendGrid).toBe(false);
+    expect(parseOptions({ extendGrid: "no" }).extendGrid).toBe(true);
+  });
+
   it("falls back to the default for each invalid field and keeps the valid ones", () => {
     expect(parseOptions({ destination: "prime", sampleRate: 48000, countInBars: 3, includeVocals: "yes" })).toEqual({
       ...DEFAULT_OPTIONS,

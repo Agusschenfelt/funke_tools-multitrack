@@ -63,6 +63,13 @@ describe("barTicks", () => {
     const xs = ticks.map((t) => (t.time / 64.5) * 640);
     for (let i = 1; i < xs.length; i += 1) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(35);
   });
+  it("flags the bars before the extrapolation point as estimated", () => {
+    const ticks = barTicks(downbeats, 64.5, 640, [1, 5, 9, 17], 36, downbeats[6] + 0.001);
+    const estimated = ticks.filter((t) => t.estimated).map((t) => t.bar);
+    expect(estimated.length).toBeGreaterThan(0);
+    expect(ticks.every((t) => t.estimated === t.time < downbeats[6])).toBe(true);
+    expect(barTicks(downbeats, 64.5, 640, [1], 36).some((t) => t.estimated)).toBe(false);
+  });
   it("is empty without a grid or width", () => {
     expect(barTicks([], 60, 600, [])).toEqual([]);
     expect(barTicks(downbeats, 60, 0, [])).toEqual([]);

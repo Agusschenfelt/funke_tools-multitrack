@@ -70,7 +70,14 @@ export interface Analysis {
   source: string;
   duration: number;
   sample_rate: number;
-  grid: { bpm: number; beats: number[]; downbeats: number[]; time_signature: string } | null;
+  grid: {
+    bpm: number;
+    beats: number[];
+    downbeats: number[];
+    time_signature: string;
+    /** Beats before this time (seconds) are estimated over a beatless intro; absent when detected. */
+    extrapolated_until?: number | null;
+  } | null;
   key: { key: string; mode: string; camelot: string } | null;
 }
 
@@ -117,6 +124,7 @@ export interface StagePackOptions {
   straight_grid?: boolean;
   sample_rate?: 44100 | 48000;
   include_vocals?: boolean;
+  extend_grid?: boolean;
   language?: "es" | "en";
 }
 
@@ -219,6 +227,8 @@ export function isValidGrid(grid: unknown): grid is NonNullable<Analysis["grid"]
   const g = grid as Record<string, unknown>;
   if (!finite(g.bpm) || g.bpm <= 0) return false;
   if (!increasing(g.beats) || !increasing(g.downbeats)) return false;
+  const until = g.extrapolated_until;
+  if (until !== undefined && until !== null && (!finite(until) || until < 0)) return false;
   return typeof g.time_signature === "string" && /^[1-9]\d{0,2}\/[1-9]\d{0,2}$/.test(g.time_signature);
 }
 

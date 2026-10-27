@@ -113,13 +113,16 @@ export interface BarTick {
   time: number;
   /** A section start, always shown. */
   anchor: boolean;
+  /** The bar lies in the part of the grid that was estimated, not detected. */
+  estimated: boolean;
 }
 
 const STEPS = [1, 2, 4, 8, 16, 32, 64, 128];
 
 /**
  * Bar numbers under the strip: every section start, plus regular bars at the smallest step that
- * keeps them `minGapPx` apart, dropping any regular tick that would crowd an anchor.
+ * keeps them `minGapPx` apart, dropping any regular tick that would crowd an anchor. Bars before
+ * `estimatedUntil` are flagged so the UI can show them as estimated.
  */
 export function barTicks(
   downbeats: readonly number[],
@@ -127,6 +130,7 @@ export function barTicks(
   widthPx: number,
   anchorBars: readonly number[],
   minGapPx = 36,
+  estimatedUntil: number | null = null,
 ): BarTick[] {
   if (downbeats.length === 0 || duration <= 0 || widthPx <= 0) return [];
   const x = (time: number) => (time / duration) * widthPx;
@@ -137,10 +141,11 @@ export function barTicks(
   const ticks: BarTick[] = [];
   downbeats.forEach((time, i) => {
     const bar = i + 1;
+    const estimated = estimatedUntil !== null && time < estimatedUntil - 1e-3;
     if (anchors.has(bar)) {
-      ticks.push({ bar, time, anchor: true });
+      ticks.push({ bar, time, anchor: true, estimated });
     } else if (i % step === 0 && anchorX.every((ax) => Math.abs(ax - x(time)) >= minGapPx)) {
-      ticks.push({ bar, time, anchor: false });
+      ticks.push({ bar, time, anchor: false, estimated });
     }
   });
   return ticks;
