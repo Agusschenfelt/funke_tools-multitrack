@@ -24,6 +24,7 @@ and only that, to recover the outcome of a job RQ has forgotten.
 
 import functools
 import hashlib
+import inspect
 import json
 import logging
 import tempfile
@@ -82,6 +83,22 @@ def set_stage(stage: str) -> None:
     job.save_meta()
 
 
+def _known_kwargs(func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Drop (with a warning) keyword arguments ``func`` does not declare.
+
+    During a rolling deploy the API may enqueue arguments a worker of the previous version does
+    not know yet, or the reverse; ignoring them keeps the job running instead of a TypeError.
+    The allowlist of job functions (``security.py``) is unaffected: only arguments are filtered.
+    """
+    params = inspect.signature(func).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    unknown = sorted(k for k in kwargs if k not in params)
+    if unknown:
+        log.warning("%s ignores unknown job arguments: %s", func.__name__, ", ".join(unknown))
+    return {k: v for k, v in kwargs.items() if k in params}
+
+
 def tracked(func: Callable[..., Any]) -> Callable[..., Any]:
     """Lock the song while the job runs and record its result under ``jobs/<job_id>.json``.
 
@@ -91,6 +108,7 @@ def tracked(func: Callable[..., Any]) -> Callable[..., Any]:
 
     @functools.wraps(func)
     def wrapper(song_id: str, *args: Any, **kwargs: Any) -> Any:
+        kwargs = _known_kwargs(func, kwargs)
         job_id = getattr(get_current_job(), "id", None)
         if not job_id:
             return func(song_id, *args, **kwargs)

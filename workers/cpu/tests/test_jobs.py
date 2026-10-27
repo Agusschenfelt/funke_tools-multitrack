@@ -63,6 +63,16 @@ def test_jobs_run_without_a_job_context(song: str, fake_models: None) -> None:
     assert jobs.analyze_job(song)["bpm"] == 120.0
 
 
+@requires_ffmpeg
+def test_analyze_job_ignores_unknown_arguments_from_a_newer_api(
+    song: str, fake_models: None, caplog
+) -> None:
+    with caplog.at_level("WARNING"):
+        result = jobs.analyze_job(song, future_option=True, another=1)
+    assert result["bpm"] == 120.0
+    assert "another, future_option" in caplog.text
+
+
 def test_analyze_job_without_source_fails(storage_root: Path, fake_models: None) -> None:
     with pytest.raises(jobs.JobError, match="no source audio"):
         jobs.analyze_job("ghost")
