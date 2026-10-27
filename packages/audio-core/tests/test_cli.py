@@ -68,9 +68,19 @@ def test_analyze_essentia_backend_unavailable_exits_1(
     assert "essentia" in result.output
 
 
+@requires_ffmpeg
 def test_separate_unknown_model_exits_1(sine_wav: Path, tmp_path: Path) -> None:
     out = tmp_path / "out"
     result = runner.invoke(app, ["separate", str(sine_wav), "--out", str(out), "--model", "nope"])
     assert result.exit_code == 1
     assert "htdemucs_6s" in result.output
     assert not (out / "stemset.json").exists()
+
+
+@requires_ffmpeg
+def test_separate_negative_shifts_exits_1(sine_wav: Path, tmp_path: Path) -> None:
+    result = runner.invoke(
+        app, ["separate", str(sine_wav), "--out", str(tmp_path / "o"), "--shifts", "-1"]
+    )
+    assert result.exit_code == 1
+    assert "shifts" in result.output

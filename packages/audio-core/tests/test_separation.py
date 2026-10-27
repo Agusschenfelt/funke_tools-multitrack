@@ -31,6 +31,39 @@ def test_unknown_device_raises(tmp_path: Path) -> None:
         separate(audio, "x.wav", out_dir=tmp_path, device="tpu")
 
 
+def test_negative_shifts_rejected(tmp_path: Path) -> None:
+    with pytest.raises(SeparationError, match="shifts"):
+        separate(np.zeros((2, 10), dtype=np.float32), "x.wav", out_dir=tmp_path, shifts=-1)
+
+
+def test_zero_shifts_is_forwarded_to_demucs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import demucs.apply
+    import demucs.pretrained
+    import torch
+
+    stems = ALLOWED_MODELS["htdemucs_6s"]
+    seen: dict[str, object] = {}
+
+    class FakeBag:
+        sources = list(stems)
+        samplerate = SAMPLE_RATE
+
+        def eval(self) -> None:
+            pass
+
+    def fake_apply(bag: object, mix: torch.Tensor, **kwargs: object) -> torch.Tensor:
+        seen.update(kwargs)
+        return torch.zeros(1, len(stems), 2, mix.shape[-1])
+
+    monkeypatch.setattr(demucs.pretrained, "get_model", lambda name: FakeBag())
+    monkeypatch.setattr(demucs.apply, "apply_model", fake_apply)
+    result = separate(np.zeros((2, 100), dtype=np.float32), "x.wav", out_dir=tmp_path, shifts=0)
+    assert seen["shifts"] == 0
+    assert result.shifts == 0
+
+
 def test_registry_matches_models_md() -> None:
     text = MODELS_MD.read_text(encoding="utf-8")
     for name, stems in ALLOWED_MODELS.items():

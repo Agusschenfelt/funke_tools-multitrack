@@ -1,0 +1,91 @@
+{
+  "language": "en",
+  "voice": {
+    "name": "en_US-ljspeech-high",
+    "engine": "piper-tts 1.8.0",
+    "model_url": "https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high",
+    "dataset": "https://keithito.com/LJ-Speech-Dataset/",
+    "model_sha256": "5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a",
+    "length_scale": 0.9,
+    "count_length_scale": 0.7200000000000001,
+    "format": "mono 44100 Hz 24-bit WAV, peak -1.0 dBFS",
+    "note": "Placeholder voice; a recorded Rioplatense voice is planned."
+  },
+  "cues": {
+    "intro": {
+      "file": "intro.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Intro'; generated with piper-tts 1.8.0"
+    },
+    "verse": {
+      "file": "verse.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Verse'; generated with piper-tts 1.8.0"
+    },
+    "verse_2": {
+      "file": "verse_2.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Verse two'; generated with piper-tts 1.8.0"
+    },
+    "pre_chorus": {
+      "file": "pre_chorus.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Pre chorus'; generated with piper-tts 1.8.0"
+    },
+    "chorus": {
+      "file": "chorus.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Chorus'; generated with piper-tts 1.8.0"
+    },
+    "bridge": {
+      "file": "bridge.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Bridge'; generated with piper-tts 1.8.0"
+    },
+    "solo": {
+      "file": "solo.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Solo'; generated with piper-tts 1.8.0"
+    },
+    "instrumental": {
+      "file": "instrumental.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Instrumental'; generated with piper-tts 1.8.0"
+    },
+    "break": {
+      "file": "break.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Break'; generated with piper-tts 1.8.0"
+    },
+    "outro": {
+      "file": "outro.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Outro'; generated with piper-tts 1.8.0"
+    },
+    "tag": {
+      "file": "tag.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Tag'; generated with piper-tts 1.8.0"
+    },
+    "count_1": {
+      "file": "count_1.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'One'; generated with piper-tts 1.8.0"
+    },
+    "count_2": {
+      "file": "count_2.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Two'; generated with piper-tts 1.8.0"
+    },
+    "count_3": {
+      "file": "count_3.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Three'; generated with piper-tts 1.8.0"
+    },
+    "count_4": {
+      "file": "count_4.wav",
+      "license": "Public domain (LJ Speech dataset)",
+      "source": "Piper voice en_US-ljspeech-high (https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/ljspeech/high); dataset https://keithito.com/LJ-Speech-Dataset/; text 'Four'; generated with piper-tts 1.8.0"
+    }
+  }
+}
