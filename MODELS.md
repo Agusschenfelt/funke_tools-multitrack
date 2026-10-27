@@ -5,6 +5,7 @@
 | `htdemucs_ft` | Source separation, 4 stems (drums, bass, other, vocals) | Demucs, Meta: https://github.com/facebookresearch/demucs | MIT | Fine-tuned Hybrid Transformer Demucs. |
 | `htdemucs_6s` | Source separation, 6 stems (drums, bass, other, vocals, guitar, piano) | Demucs, Meta: https://github.com/facebookresearch/demucs | MIT | Default model. Guitar and piano stems are lower quality than the other four. |
 | `beat_this` `final0` | Beat and downbeat tracking | CPJKU beat_this: https://github.com/CPJKU/beat_this (PyPI `beat_this`) | MIT | Default checkpoint, run on CPU without the madmom DBN post-processor. |
+| Essentia `KeyExtractor`, `ChordsDetectionBeats` | Key estimation and beat-aligned chord detection (signal processing, no weights) | Essentia, MTG-UPF: https://github.com/MTG/essentia (PyPI `essentia`) | AGPL-3.0 | Library, not a checkpoint. Installed through the `essentia` extra in the Linux worker image; AGPL-3.0 is compatible with this project's own AGPL-3.0 license. Without it the key falls back to librosa and no chords are produced. |
 
 ## Checkpoint download and caching
 

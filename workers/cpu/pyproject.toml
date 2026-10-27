@@ -5,7 +5,7 @@ description = "RQ worker that runs the audio-core CPU pipelines (analysis, secti
 requires-python = ">=3.11,<3.12"
 dependencies = [
     # The worker is the only service that installs the heavy extras (torch, demucs, librosa).
-    "audio-core[ml,analysis]",
+    "audio-core[ml,analysis,essentia]",
     "rq>=2",
     "redis>=5",
 ]

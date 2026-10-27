@@ -42,8 +42,10 @@ analysis = [
     "numba<0.62",  # cap: no wheel for this Intel Mac in newer releases
     "llvmlite<0.45",  # cap: numba 0.61 requires llvmlite 0.44.x; newer has no wheel here
 ]
+# essentia: Essentia key and chord estimation (AGPL-3.0, see MODELS.md). PyPI ships cp311 wheels for
+# Linux x86_64 and macOS only, with no sdist, so other platforms keep the librosa fallback.
 essentia = [
-    "essentia>=2.1b6.dev1389",
+    "essentia>=2.1b6.dev1389; (sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'darwin'",
 ]
 
 [dependency-groups]
@@ -51,7 +53,7 @@ essentia = [
 dev = [
     "pytest",
     "ruff",
-    "audio-core[ml,analysis]",
+    "audio-core[ml,analysis,essentia]",
 ]
 
 # Linux resolves torch from the PyTorch CPU index (no CUDA/nvidia/triton wheels, much smaller image).
