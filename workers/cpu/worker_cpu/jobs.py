@@ -33,6 +33,8 @@ from typing import Any
 from audio_core.analysis import AnalyzeOptions
 from audio_core.analysis import analyze as run_analyze
 from audio_core.constants import (
+    DURATION_LIMIT_CODE,
+    MAX_DURATION_PROBE_SLACK_SECONDS,
     MAX_DURATION_SECONDS,
     MAX_DURATION_TOLERANCE_SECONDS,
     PREVIEW_BITRATE_KBPS,
@@ -119,29 +121,28 @@ def _source_name(storage: Storage, song_id: str) -> str:
     return names[0]
 
 
-def _mmss(seconds: float) -> str:
-    total = int(seconds)
-    return f"{total // 60}:{total % 60:02d}"
-
-
 def _check_duration(seconds: float) -> None:
-    """Reject a song longer than the product maximum with a user-facing Spanish message."""
+    """Reject a song longer than the product maximum.
+
+    The message is a stable code the web maps to its own wording:
+    ``DURATION_LIMIT:<song seconds>:<maximum seconds>`` (whole seconds).
+    """
     if seconds > MAX_DURATION_SECONDS + MAX_DURATION_TOLERANCE_SECONDS:
-        raise JobError(
-            f"El tema dura {_mmss(seconds)} y el máximo es {_mmss(MAX_DURATION_SECONDS)}."
-        )
+        raise JobError(f"{DURATION_LIMIT_CODE}:{int(seconds)}:{MAX_DURATION_SECONDS}")
 
 
 def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, str]:
     name = _source_name(storage, song_id)
     local = workdir / name
     storage.get_file(song_id, name, local)
-    # Cheap container check first, so an over-long file is never decoded into memory.
+    # Cheap container check first, so an over-long file is never decoded into memory. The
+    # container duration of a VBR file can overestimate by a few seconds, so only a probe clearly
+    # over the limit rejects here; a borderline one is decoded and decided on its exact length.
     probed = probe_duration(local)
-    if probed is not None:
+    if probed is not None and probed > MAX_DURATION_SECONDS + MAX_DURATION_PROBE_SLACK_SECONDS:
         _check_duration(probed)
     audio = decode(local)
-    # ffprobe failed or lied (missing or wrong container duration): the decoded length decides.
+    # Borderline or missing/wrong container duration: the decoded length decides.
     _check_duration(duration_seconds(audio))
     return audio, name
 

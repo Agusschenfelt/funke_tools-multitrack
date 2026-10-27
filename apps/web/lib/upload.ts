@@ -67,13 +67,28 @@ export function validateFile(
 export const MAX_DURATION_SECONDS = 600;
 const METADATA_TIMEOUT_MS = 5000;
 
-function mmss(seconds: number): string {
+/**
+ * Browser metadata can overestimate (VBR MP3 without a Xing header), so the browser only blocks a
+ * file clearly over the limit; anything near the boundary goes to the server, which decodes it.
+ */
+export const BROWSER_ESTIMATE_SLACK_SECONDS = 2;
+
+export function mmss(seconds: number): string {
   const total = Math.floor(seconds);
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export function tooLongMessage(seconds: number): string {
-  return `Este tema dura ${mmss(seconds)}. El máximo es 10 minutos.`;
+/** The limit in words, derived from the limit itself: `10 minutos`. */
+export function limitLabel(maxSeconds: number = MAX_DURATION_SECONDS): string {
+  if (maxSeconds % 60 === 0) {
+    const minutes = maxSeconds / 60;
+    return `${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
+  }
+  return `${mmss(maxSeconds)} minutos`;
+}
+
+export function tooLongMessage(seconds: number, maxSeconds: number = MAX_DURATION_SECONDS): string {
+  return `Este tema dura ${mmss(seconds)}. El máximo es ${limitLabel(maxSeconds)}.`;
 }
 
 export type DurationCheck = { ok: true } | { ok: false; code: "duration"; message: string };
@@ -84,8 +99,9 @@ export function checkDuration(
   maxSeconds: number = MAX_DURATION_SECONDS,
 ): DurationCheck {
   if (seconds === null || !Number.isFinite(seconds)) return { ok: true };
-  // Same tolerance as the worker (0.5 s) so a borderline 10:00 file is not blocked here.
-  if (seconds > maxSeconds + 0.5) return { ok: false, code: "duration", message: tooLongMessage(seconds) };
+  if (seconds > maxSeconds + BROWSER_ESTIMATE_SLACK_SECONDS) {
+    return { ok: false, code: "duration", message: tooLongMessage(seconds, maxSeconds) };
+  }
   return { ok: true };
 }
 

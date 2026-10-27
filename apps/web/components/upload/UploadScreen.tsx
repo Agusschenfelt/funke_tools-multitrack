@@ -8,7 +8,15 @@ import { rememberSong, updateRecent } from "@/lib/recentSongs";
 import { recentFromUpload } from "@/lib/recentVerification";
 import { processingQuery, startMissingJobs } from "@/lib/startJobs";
 import { formatBytes } from "@/lib/format";
-import { ACCEPT, MAX_UPLOAD_MB, checkDuration, formatsLabel, readDuration, validateFile } from "@/lib/upload";
+import {
+  ACCEPT,
+  MAX_UPLOAD_MB,
+  checkDuration,
+  formatsLabel,
+  limitLabel,
+  readDuration,
+  validateFile,
+} from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
 import { RecentSongs } from "./RecentSongs";
 import styles from "./UploadScreen.module.css";
@@ -162,7 +170,7 @@ export function UploadScreen() {
               Elegir archivo
             </button>
             <p className={styles.constraints}>
-              {formatsLabel()}. Hasta {MAX_UPLOAD_MB} MB y 10 minutos.
+              {formatsLabel()}. Hasta {MAX_UPLOAD_MB} MB y {limitLabel()}.
             </p>
           </div>
         )}
