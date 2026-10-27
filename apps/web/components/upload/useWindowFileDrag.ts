@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { dragHasFiles, isOverlayVisible, nextDragDepth, type DragStep } from "@/lib/fileDrag";
+import { reduceWindowDrag, type WindowDragInput } from "@/lib/fileDrag";
 
 /**
  * Tracks a file drag anywhere over the window. Returns whether the overlay shows; a drop anywhere
@@ -18,31 +18,21 @@ export function useWindowFileDrag(onFile: (file: File) => void, enabled: boolean
   });
 
   useEffect(() => {
-    const step = (kind: DragStep) => {
-      depth.current = nextDragDepth(depth.current, kind);
-      setVisible(isOverlayVisible(depth.current));
-    };
-    const isFileDrag = (event: DragEvent) => dragHasFiles(event.dataTransfer?.types);
-
-    const onEnter = (event: DragEvent) => {
-      if (isFileDrag(event) && enabled) step("enter");
-    };
-    const onLeave = (event: DragEvent) => {
-      if (isFileDrag(event) && enabled) step("leave");
-    };
-    const onOver = (event: DragEvent) => {
+    const apply = (input: WindowDragInput, event: Event) => {
+      const result = reduceWindowDrag(depth.current, enabled, input);
+      depth.current = result.depth;
+      setVisible(result.visible);
       // Required for the drop event to fire; also stops the browser navigating to the file.
-      if (isFileDrag(event)) event.preventDefault();
+      if (result.preventDefault) event.preventDefault();
+      if (result.file) handler.current(result.file);
     };
-    const onDrop = (event: DragEvent) => {
-      if (!isFileDrag(event)) return;
-      event.preventDefault();
-      step("reset");
-      const file = event.dataTransfer?.files[0];
-      if (file && enabled) handler.current(file);
-    };
+    const onEnter = (event: DragEvent) => apply({ kind: "enter", types: event.dataTransfer?.types }, event);
+    const onLeave = (event: DragEvent) => apply({ kind: "leave", types: event.dataTransfer?.types }, event);
+    const onOver = (event: DragEvent) => apply({ kind: "over", types: event.dataTransfer?.types }, event);
+    const onDrop = (event: DragEvent) =>
+      apply({ kind: "drop", types: event.dataTransfer?.types, file: event.dataTransfer?.files[0] ?? null }, event);
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") step("reset");
+      if (event.key === "Escape") apply({ kind: "escape" }, event);
     };
 
     window.addEventListener("dragenter", onEnter);

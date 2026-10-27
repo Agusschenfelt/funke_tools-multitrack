@@ -203,6 +203,16 @@ describe("previewWindow", () => {
     expect(previewWindow(10_000 + 1024 + 700, alignment)).toEqual({ start: 1024, length: 10_000 });
   });
 
+  it("leaves the decode untouched when a sample rate is zero or invalid", () => {
+    for (const sampleRate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(previewWindow(11_024, { ...alignment, sampleRate })).toEqual({ start: 0, length: 11_024 });
+    }
+    // An unusable decoded rate falls back to the stemset's own rate.
+    for (const rate of [0, Number.NaN]) {
+      expect(previewWindow(11_024, alignment, rate)).toEqual({ start: 1024, length: 10_000 });
+    }
+  });
+
   it("converts priming and length to the decoded rate (context at 48 kHz)", () => {
     const rate = 48_000;
     const samples = Math.round((10_000 * rate) / 44_100); // 10884
