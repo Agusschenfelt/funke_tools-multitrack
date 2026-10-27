@@ -168,3 +168,72 @@
     font-size: 3.5rem;
   }
 }
+
+/* The wait: ruler, stage lines, then one slot that holds either the hint or the way in. */
+.block .note {
+  margin-top: var(--space-3);
+}
+
+.block > :global(.visually-hidden) + .note {
+  margin-top: var(--space-3);
+}
+
+.slot {
+  min-height: 7rem;
+  margin-top: var(--space-4);
+}
+
+.slotLine {
+  max-width: var(--measure);
+  min-height: 3rem;
+  color: var(--paper);
+}
+
+.slotAction {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+  margin-top: var(--space-2);
+}
+
+.slotAction .primary {
+  margin-top: 0;
+}
+
+.slotHint {
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.detail {
+  margin-top: var(--space-4);
+  color: var(--paper-dim);
+}
+
+.detail summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.detail[open] summary {
+  color: var(--paper);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .arrive {
+    animation: arrive 520ms var(--ease-out) backwards;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(0.375rem);
+  }
+}
