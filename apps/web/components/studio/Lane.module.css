@@ -13,10 +13,10 @@
 
 .head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 6.5rem;
   grid-template-areas:
     "name buttons"
-    "volume volume";
+    "volume pan";
   align-content: center;
   gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-4) var(--space-2) 0;
@@ -68,7 +68,35 @@
   color: var(--ink);
 }
 
-.volume {
+.pan {
+  position: relative;
+  grid-area: pan;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.pan::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 0.5rem;
+  background: var(--graphite);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.panEnd {
+  flex: none;
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+}
+
+.volume,
+.panSlider {
   grid-area: volume;
   width: 100%;
   height: 1.25rem;
@@ -78,17 +106,20 @@
   cursor: pointer;
 }
 
-.volume::-webkit-slider-runnable-track {
+.volume::-webkit-slider-runnable-track,
+.panSlider::-webkit-slider-runnable-track {
   height: 2px;
   background: var(--graphite);
 }
 
-.volume::-moz-range-track {
+.volume::-moz-range-track,
+.panSlider::-moz-range-track {
   height: 2px;
   background: var(--graphite);
 }
 
-.volume::-webkit-slider-thumb {
+.volume::-webkit-slider-thumb,
+.panSlider::-webkit-slider-thumb {
   width: 0.75rem;
   height: 1.125rem;
   margin-top: -0.5rem;
@@ -98,7 +129,8 @@
   appearance: none;
 }
 
-.volume::-moz-range-thumb {
+.volume::-moz-range-thumb,
+.panSlider::-moz-range-thumb {
   width: 0.75rem;
   height: 1.125rem;
   border: 0;
@@ -166,7 +198,8 @@
     min-width: var(--touch);
     height: var(--touch);
   }
-  .volume {
+  .volume,
+  .panSlider {
     height: var(--touch);
   }
 }
@@ -197,7 +230,8 @@
     grid-template-columns: 1fr auto auto;
     grid-template-areas:
       "name pager buttons"
-      "volume volume volume";
+      "volume volume volume"
+      "pan pan pan";
     gap: var(--space-2) var(--space-3);
     padding: var(--space-3) 0;
   }
@@ -219,7 +253,8 @@
     height: var(--touch);
   }
 
-  .volume {
+  .volume,
+  .panSlider {
     height: var(--touch);
   }
 }

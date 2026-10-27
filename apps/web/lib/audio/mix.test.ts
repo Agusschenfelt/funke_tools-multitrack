@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MIX, stemGains, type StemMix } from "./mix";
+import { clampPan, DEFAULT_MIX, panText, stemGains, type StemMix } from "./mix";
 
 const mix = (over: Partial<Record<"a" | "b" | "c", Partial<StemMix>>> = {}) => ({
   a: { ...DEFAULT_MIX, ...over.a },
@@ -35,5 +35,24 @@ describe("stemGains", () => {
       b: 0,
       c: 0,
     });
+  });
+});
+
+describe("pan", () => {
+  it("clamps to the stereo field and treats junk as centre", () => {
+    expect(clampPan(3)).toBe(1);
+    expect(clampPan(-3)).toBe(-1);
+    expect(clampPan(Number.NaN)).toBe(0);
+    expect(clampPan(0.25)).toBe(0.25);
+  });
+
+  it("does not change the gains", () => {
+    expect(stemGains(mix({ a: { pan: -1 } }))).toEqual({ a: 1, b: 1, c: 1 });
+  });
+
+  it("reads out in Spanish", () => {
+    expect(panText(0)).toBe("Centro");
+    expect(panText(-0.5)).toBe("50 % izquierda");
+    expect(panText(1)).toBe("100 % derecha");
   });
 });

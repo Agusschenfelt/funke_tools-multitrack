@@ -1,9 +1,9 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import type { StemView } from "@/lib/audio/engine";
 import type { StudioEngine } from "@/lib/audio/engine";
-import type { StemMix } from "@/lib/audio/mix";
+import { panText, type StemMix } from "@/lib/audio/mix";
 import { STEM_LABEL, type StemName } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
 import type { StripSpan } from "@/lib/strip";
@@ -41,6 +41,45 @@ function loadingText(view: StemView): string | null {
     return view.failure === "decode" ? "No se pudo leer esta pista" : "No se pudo descargar esta pista";
   }
   return "En espera";
+}
+
+/** Left-centre-right. Double-click or Enter puts it back in the centre. */
+function PanControl({ engine, name, label, pan }: { engine: StudioEngine; name: StemName; label: string; pan: number }) {
+  const centre = () => engine.setPan(name, 0);
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    centre();
+  };
+  return (
+    <div className={styles.pan}>
+      <span className={`${styles.panEnd} mono`} aria-hidden="true">
+        L
+      </span>
+      <input
+        type="range"
+        className={styles.panSlider}
+        min={-1}
+        max={1}
+        step={0.05}
+        value={pan}
+        aria-label={`Paneo de ${label}`}
+        aria-valuetext={panText(pan)}
+        aria-keyshortcuts="Enter"
+        title="Doble clic o Enter para centrar"
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          // A small detent so the centre is easy to land on.
+          engine.setPan(name, Math.abs(next) < 0.08 ? 0 : next);
+        }}
+        onDoubleClick={centre}
+        onKeyDown={onKeyDown}
+      />
+      <span className={`${styles.panEnd} mono`} aria-hidden="true">
+        R
+      </span>
+    </div>
+  );
 }
 
 export function Lane({
@@ -93,6 +132,7 @@ export function Lane({
           aria-label={`Volumen de ${label}`}
           onChange={(event) => engine.setVolume(name, Number(event.target.value))}
         />
+        <PanControl engine={engine} name={name} label={label} pan={mix.pan} />
       </div>
       <div
         className={styles.wave}

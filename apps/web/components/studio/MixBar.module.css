@@ -1,0 +1,90 @@
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* One bordered strip of buttons; the pressed one is paper, the rest stay ink. */
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-right: 1px solid var(--graphite);
+  background: transparent;
+  color: var(--paper);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.segment:last-child {
+  border-right: 0;
+}
+
+.segment:hover:not(:disabled):not([data-custom]) {
+  background: var(--ink-lifted);
+}
+
+.segment[aria-pressed="true"] {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.segment:disabled {
+  color: var(--paper-dim);
+  cursor: not-allowed;
+}
+
+/* Not a button: it only reports that the mix no longer matches a preset. */
+.segment[data-custom] {
+  color: var(--paper-dim);
+  cursor: default;
+}
+
+.segment[data-custom="active"] {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+@media (pointer: coarse) {
+  .segment {
+    min-height: var(--touch);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .bar {
+    padding: var(--space-2) 0;
+  }
+
+  /* Phone: the strip scrolls sideways instead of wrapping into rows. */
+  .group {
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .group::-webkit-scrollbar {
+    display: none;
+  }
+}

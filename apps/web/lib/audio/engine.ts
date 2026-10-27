@@ -16,7 +16,8 @@
  */
 import type { SectionName } from "@/lib/api";
 import { clickWave } from "./click";
-import { DEFAULT_MIX, stemGains, type StemMix } from "./mix";
+import { clampPan, DEFAULT_MIX, stemGains, type StemMix } from "./mix";
+import { applyPresetToMix, type PresetId } from "./presets";
 import { bucketCount, computePeaks, type Peaks } from "./peaks";
 import {
   eventsInWindow,
@@ -148,6 +149,7 @@ export class StudioEngine {
   private cueBus: GainNode | null = null;
   private clickBuffers: { accent: AudioBuffer; normal: AudioBuffer } | null = null;
   private readonly stemNodes = new Map<StemName, GainNode>();
+  private readonly panNodes = new Map<StemName, StereoPannerNode>();
   private readonly buffers = new Map<StemName, AudioBuffer>();
   private readonly cueLibrary = new Map<CueLanguage, Map<SectionName, CueSample>>();
 
@@ -201,6 +203,7 @@ export class StudioEngine {
     };
     this.clickBuffers = { accent: make(true), normal: make(false) };
     this.stemNodes.clear();
+    this.panNodes.clear();
     return ctx;
   }
 
@@ -276,7 +279,9 @@ export class StudioEngine {
     this.playToken += 1;
     this.stopRun();
     for (const node of this.stemNodes.values()) node.disconnect();
+    for (const node of this.panNodes.values()) node.disconnect();
     this.stemNodes.clear();
+    this.panNodes.clear();
     this.buffers.clear();
     this.pausedAt = 0;
   }
@@ -295,7 +300,16 @@ export class StudioEngine {
     );
     const peaks = computePeaks(channels, bucketCount(buffer.duration));
     const node = ctx.createGain();
-    node.connect(ctx.destination);
+    // Stem -> gain -> panner -> out. A browser without StereoPannerNode just plays centred.
+    if (typeof ctx.createStereoPanner === "function") {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = this.state.mix[name].pan;
+      node.connect(panner);
+      panner.connect(ctx.destination);
+      this.panNodes.set(name, panner);
+    } else {
+      node.connect(ctx.destination);
+    }
     this.stemNodes.set(name, node);
     this.buffers.set(name, buffer);
     this.setStem(name, { phase: "ready", peaks });
@@ -451,8 +465,38 @@ export class StudioEngine {
     }
   }
 
+  private applyPans() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (const [name, node] of this.panNodes) {
+      node.pan.setTargetAtTime(this.state.mix[name].pan, ctx.currentTime, GAIN_SMOOTHING);
+    }
+  }
+
   private setMix(name: StemName, patch: Partial<StemMix>) {
     this.set({ mix: { ...this.state.mix, [name]: { ...this.state.mix[name], ...patch } } });
+    this.applyGains();
+  }
+
+  setPan(name: StemName, pan: number) {
+    this.set({ mix: { ...this.state.mix, [name]: { ...this.state.mix[name], pan: clampPan(pan) } } });
+    this.applyPans();
+  }
+
+  /** Sets remembered pans in one go (before they were loaded the lanes were centred). */
+  restorePans(pans: Partial<Record<StemName, number>>) {
+    const mix = { ...this.state.mix };
+    for (const name of STEM_ORDER) {
+      const pan = pans[name];
+      if (pan !== undefined) mix[name] = { ...mix[name], pan: clampPan(pan) };
+    }
+    this.set({ mix });
+    this.applyPans();
+  }
+
+  /** Replaces the mute/solo layout with a quick mix; volume and pan stay. */
+  applyPreset(id: PresetId) {
+    this.set({ mix: applyPresetToMix(id, this.state.mix, this.state.order) });
     this.applyGains();
   }
 
@@ -532,6 +576,7 @@ export class StudioEngine {
     this.stopRun();
     this.buffers.clear();
     this.stemNodes.clear();
+    this.panNodes.clear();
     this.cueLibrary.clear();
     const ctx = this.ctx;
     this.ctx = null;

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   describeError,
@@ -15,12 +15,15 @@ import {
 import { StudioEngine, type LoadFailure } from "@/lib/audio/engine";
 import { beatsPerBar } from "@/lib/audio/grid";
 import { stemGains } from "@/lib/audio/mix";
+import { loadPans, savePans } from "@/lib/audio/panStore";
+import { detectPreset } from "@/lib/audio/presets";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
 import { orderStems, studioSources } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
 import { Lane } from "./Lane";
+import { MixBar } from "./MixBar";
 import { SectionEditor, SectionToolbar } from "./SectionPanel";
 import { SectionStrip } from "./SectionStrip";
 import { SongBar } from "./SongBar";
@@ -263,6 +266,22 @@ function StudioStage({
   }, [engine]);
 
   const gains = stemGains(state.mix);
+  const preset = detectPreset(state.mix, state.order);
+
+  // Pans are remembered per song: restored once the lanes exist, saved on every change after that.
+  const restoredPans = useRef(false);
+  const panKey = names.map((name) => state.mix[name].pan).join(",");
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    if (!restoredPans.current) {
+      restoredPans.current = true;
+      engine.restorePans(loadPans(songId));
+      return;
+    }
+    savePans(songId, Object.fromEntries(names.map((name) => [name, state.mix[name].pan])));
+    // panKey stands for the pan values; the rest of state.mix is irrelevant here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, songId, state.status, panKey]);
   const activeGroup = active ? active.group : null;
   const activeSpan = active ? groups[active.group]?.spans[active.span] ?? null : null;
   const activeIndex = flatIndex(groups, active);
@@ -355,6 +374,11 @@ function StudioStage({
             />
           )}
         </div>
+        <MixBar
+          preset={preset}
+          disabled={state.status !== "ready"}
+          onPreset={(id) => engine.applyPreset(id)}
+        />
         <div className={lanes.lanes}>
           {names.map((name, index) => (
             <Lane

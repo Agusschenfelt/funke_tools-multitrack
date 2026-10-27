@@ -41,6 +41,8 @@ let failConstruct = false;
 let decodedFrames: number | null = null;
 let createdBuffers: { length: number; copied: Float32Array[] }[] = [];
 
+const pans: { pan: { value: number; targets: number[] }; disconnected: boolean }[] = [];
+
 class FakeContext {
   currentTime = 0;
   state = "running";
@@ -55,6 +57,24 @@ class FakeContext {
     const gain = new FakeGain();
     created.gains.push(gain);
     return gain;
+  }
+  createStereoPanner() {
+    const panner = {
+      disconnected: false,
+      pan: {
+        value: 0,
+        targets: [] as number[],
+        setTargetAtTime(value: number) {
+          panner.pan.targets.push(value);
+        },
+      },
+      connect() {},
+      disconnect() {
+        panner.disconnected = true;
+      },
+    };
+    pans.push(panner);
+    return panner;
   }
   createBufferSource() {
     const source = new FakeSource();
@@ -127,6 +147,7 @@ beforeEach(() => {
   failConstruct = false;
   decodedFrames = null;
   createdBuffers = [];
+  pans.length = 0;
   vi.stubGlobal("AudioContext", FakeContext);
   stubFetch();
 });
@@ -290,5 +311,54 @@ describe("StudioEngine.dispose", () => {
     await ready(engine);
     engine.dispose();
     expect(created.contexts[0].closed).toBe(true);
+  });
+});
+
+describe("StudioEngine pan and presets", () => {
+  it("builds one panner per stem and moves it with setPan", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    expect(pans).toHaveLength(3);
+    engine.setPan("bass", -0.5);
+    expect(engine.getSnapshot().mix.bass.pan).toBe(-0.5);
+    expect(pans.filter((p) => p.pan.targets.includes(-0.5))).toHaveLength(1);
+    engine.setPan("bass", 9);
+    expect(engine.getSnapshot().mix.bass.pan).toBe(1);
+    engine.dispose();
+  });
+
+  it("restores saved pans, ignoring unknown values", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.restorePans({ drums: 0.4, vocals: -2 });
+    const { mix } = engine.getSnapshot();
+    expect(mix.drums.pan).toBe(0.4);
+    expect(mix.vocals.pan).toBe(-1);
+    expect(mix.bass.pan).toBe(0);
+    engine.dispose();
+  });
+
+  it("plays centred when the browser has no StereoPannerNode", async () => {
+    const proto = FakeContext.prototype as unknown as { createStereoPanner?: unknown };
+    const original = proto.createStereoPanner;
+    proto.createStereoPanner = undefined;
+    const engine = new StudioEngine();
+    await ready(engine);
+    expect(pans).toHaveLength(0);
+    engine.setPan("drums", 0.5);
+    engine.dispose();
+    proto.createStereoPanner = original;
+  });
+
+  it("applies a preset to the lanes it has", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.toggleSolo("bass");
+    engine.applyPreset("karaoke");
+    const { mix } = engine.getSnapshot();
+    expect(mix.vocals.muted).toBe(true);
+    expect(mix.drums.muted).toBe(false);
+    expect(mix.bass.solo).toBe(false);
+    engine.dispose();
   });
 });
