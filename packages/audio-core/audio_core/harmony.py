@@ -286,7 +286,10 @@ def _key_candidate(mono: np.ndarray, profile: str) -> KeyCandidate | None:
     name = sharp_name(key)
     if name not in PITCH_CLASSES or scale not in ("major", "minor"):
         return None
-    return KeyCandidate(PITCH_CLASSES.index(name), scale, max(0.0, min(1.0, float(strength))))
+    value = float(strength)
+    # NaN would slip through min/max as 1.0 (certain); treat a non-finite strength as no evidence.
+    clamped = max(0.0, min(1.0, value)) if np.isfinite(value) else 0.0
+    return KeyCandidate(PITCH_CLASSES.index(name), scale, clamped)
 
 
 def estimate_key_with_chords(

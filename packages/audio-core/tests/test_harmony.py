@@ -241,3 +241,23 @@ def test_essentia_key_of_a_synthetic_chord_loop() -> None:
     assert chosen is not None and info is not None
     assert info.key == "A" and info.mode == "major"
     assert info.confidence is not None
+
+
+def test_nan_key_strength_is_no_evidence_not_certainty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from audio_core import harmony
+
+    class FakeExtractor:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __call__(self, _mono):
+            return "A", "minor", float("nan")
+
+    class FakeEs:
+        KeyExtractor = FakeExtractor
+
+    monkeypatch.setattr(harmony, "_essentia", lambda: FakeEs)
+    candidate = harmony._key_candidate(np.zeros(10, dtype=np.float32), "bgate")
+    assert candidate is not None and candidate.strength == 0.0
+    _chosen, info, _reason = estimate_key_with_chords(np.zeros(10, dtype=np.float32), None)
+    assert info is not None and info.confidence == 0.0

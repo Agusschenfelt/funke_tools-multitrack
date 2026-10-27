@@ -39,6 +39,9 @@ from audio_core.models import Analysis, Chord, Grid, KeyInfo, Loudness, ModelVer
 
 log = logging.getLogger(__name__)
 
+# ChordsDetectionBeats needs at least this many beats to span two segments.
+MIN_REAL_BEATS_FOR_CHORDS = 3
+
 BEAT_MODEL = "final0"
 TRUE_PEAK_OVERSAMPLING = 4
 SILENCE_LUFS = -70.0
@@ -240,7 +243,12 @@ def resolve_key_backend(backend: KeyBackend = "auto") -> Literal["essentia", "li
 
 def key_model_version(backend: KeyBackend = "auto") -> ModelVersion:
     """The model record for whichever key backend `estimate_key` will use."""
-    if resolve_key_backend(backend) == "essentia":
+    return _key_model(resolve_key_backend(backend))
+
+
+def _key_model(used: Literal["essentia", "librosa"]) -> ModelVersion:
+    """The model record of the key backend that actually produced the key."""
+    if used == "essentia":
         return ModelVersion(
             name="essentia-keyextractor",
             version=essentia_version(),
@@ -263,6 +271,29 @@ def estimate_key(
     return estimate_key_librosa(audio)
 
 
+def estimate_key_resolved(
+    audio: np.ndarray, backend: KeyBackend = "auto", chords: list[Chord] | None = None
+) -> tuple[KeyInfo, Literal["essentia", "librosa"]]:
+    """Estimate the key and report the backend that produced it.
+
+    With "auto", any Essentia failure falls back to librosa (logged, and noted on the result);
+    an explicit "essentia" keeps failing loudly.
+    """
+    resolved = resolve_key_backend(backend)
+    if resolved == "librosa":
+        return estimate_key_librosa(audio), "librosa"
+    if backend == "essentia":
+        return estimate_key_essentia(audio, chords), "essentia"
+    try:
+        return estimate_key_essentia(audio, chords), "essentia"
+    except Exception as exc:  # noqa: BLE001 - "auto" must not fail the analysis on Essentia
+        log.warning("essentia key estimate failed; falling back to librosa", exc_info=True)
+        info = estimate_key_librosa(audio)
+        reason = f"essentia key estimate failed ({exc}); used librosa"
+        info.note = f"{info.note}; {reason}" if info.note else reason
+        return info, "librosa"
+
+
 def chords_model_version() -> ModelVersion:
     return ModelVersion(
         name="essentia-chordsdetectionbeats",
@@ -281,12 +312,21 @@ def detect_song_chords(audio: np.ndarray, grid: Grid | None) -> list[Chord] | No
     """
     if grid is None or not grid.beats:
         return None
+    # Beats before ``extrapolated_until`` are invented lead-in; only the real ones count.
+    start = grid.extrapolated_until
+    real = [b for b in grid.beats if start is None or b >= start - 1e-3]
+    if len(real) < MIN_REAL_BEATS_FOR_CHORDS:
+        log.info("only %d real beats; skipping chord detection", len(real))
+        return None
     try:
-        chords = detect_chords(to_mono(audio), grid.beats, start_at=grid.extrapolated_until)
+        chords = detect_chords(to_mono(audio), real)
     except Exception:  # noqa: BLE001 - chords are an extra; any Essentia failure is non-fatal
         log.warning("chord detection failed; analysis continues without chords", exc_info=True)
         return None
-    return chords or None
+    if not chords:
+        log.info("chord detection found no chords")
+        return None
+    return chords
 
 
 # --- Loudness ----------------------------------------------------------------------------
@@ -336,7 +376,8 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
     options = options or AnalyzeOptions()
     key_backend = resolve_key_backend(options.key_backend)
     # Fail fast, before the slow beat model runs: a missing extra must not surface only after it.
-    if key_backend == "librosa":
+    # "auto" may fall back to librosa when the Essentia estimate fails at run time.
+    if key_backend == "librosa" or options.key_backend == "auto":
         require("librosa")
     require("pyloudnorm")
     beats, downbeats = detect_beats(
@@ -344,7 +385,7 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
     )
     grid = build_grid(beats, downbeats)
     chords = detect_song_chords(audio, grid) if key_backend == "essentia" else None
-    key = estimate_key(audio, options.key_backend, chords)
+    key, key_used = estimate_key_resolved(audio, options.key_backend, chords)
     loudness = measure_loudness(audio)
     return Analysis(
         source=source,
@@ -365,7 +406,7 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
                 version=GRID_POSTPROCESS_VERSION,
                 source="outlier beat cleanup + backward lead-in extrapolation",
             ),
-            "key": key_model_version(options.key_backend),
+            "key": _key_model(key_used),
             "loudness": ModelVersion(name="pyloudnorm", version=_package_version("pyloudnorm")),
             **({"chords": chords_model_version()} if chords else {}),
         },

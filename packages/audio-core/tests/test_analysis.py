@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 
@@ -6,6 +8,7 @@ from audio_core.analysis import (
     camelot_code,
     compatible_codes,
     compute_bpm,
+    detect_song_chords,
     estimate_key_librosa,
     infer_time_signature,
     measure_loudness,
@@ -15,7 +18,7 @@ from audio_core.analysis import (
 from audio_core.analysis import analyze as run_analyze
 from audio_core.constants import SAMPLE_RATE
 from audio_core.io import decode
-from audio_core.models import Analysis
+from audio_core.models import Analysis, Chord, Grid, KeyInfo
 from tests.conftest import ClickTrack, requires_ffmpeg
 
 
@@ -174,3 +177,119 @@ def test_three_four_click_track_model_detection(click_track_34_wav: ClickTrack) 
     result = run_analyze(decode(click_track_34_wav.path), "click_34.wav")
     assert result.grid is not None
     assert result.grid.time_signature == "3/4"
+
+
+# --- Key backend fallback and chord model record -------------------------------------------
+
+
+def _fake_analyze(monkeypatch: pytest.MonkeyPatch, *, chords: list[Chord] | None) -> np.ndarray:
+    beats = np.arange(0.0, 8.0, 0.5)
+    monkeypatch.setattr("audio_core.analysis.detect_beats", lambda *a, **k: (beats, beats[::4]))
+    monkeypatch.setattr("audio_core.analysis._essentia_available", lambda: True)
+    monkeypatch.setattr("audio_core.analysis.detect_song_chords", lambda audio, grid: chords)
+    monkeypatch.setattr("audio_core.analysis.essentia_version", lambda: "9.9")
+    t = np.arange(SAMPLE_RATE * 8) / SAMPLE_RATE
+    mono = 0.1 * np.sin(2 * np.pi * 261.63 * t)
+    return np.stack([mono, mono]).astype(np.float32)
+
+
+def _boom(*_args, **_kwargs):
+    raise AnalysisError("Essentia returned an unexpected key")
+
+
+def test_auto_falls_back_to_librosa_when_essentia_key_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    audio = _fake_analyze(monkeypatch, chords=None)
+    monkeypatch.setattr("audio_core.analysis.estimate_key_essentia", _boom)
+    with caplog.at_level(logging.WARNING):
+        result = run_analyze(audio, "x.wav")
+    assert result.key.key == "C"
+    assert result.key.note is not None and "librosa" in result.key.note
+    assert result.models["key"].name == "librosa-krumhansl"
+    assert "falling back to librosa" in caplog.text
+    assert "chords" not in result.models
+
+
+def test_auto_records_essentia_when_it_produces_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    audio = _fake_analyze(monkeypatch, chords=None)
+    info = KeyInfo(key="A", mode="minor", camelot="8A", compatible=[])
+    monkeypatch.setattr("audio_core.analysis.estimate_key_essentia", lambda *a: info)
+    result = run_analyze(audio, "x.wav")
+    assert result.key == info
+    assert result.models["key"].name == "essentia-keyextractor"
+
+
+def test_explicit_essentia_key_failure_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from audio_core.analysis import AnalyzeOptions
+
+    audio = _fake_analyze(monkeypatch, chords=None)
+    monkeypatch.setattr("audio_core.analysis.estimate_key_essentia", _boom)
+    with pytest.raises(AnalysisError, match="unexpected key"):
+        run_analyze(audio, "x.wav", options=AnalyzeOptions(key_backend="essentia"))
+
+
+def test_auto_requires_librosa_up_front(monkeypatch: pytest.MonkeyPatch) -> None:
+    from audio_core.extras import MissingExtraError
+
+    audio = _fake_analyze(monkeypatch, chords=None)
+    real = __import__("audio_core.analysis", fromlist=["require"]).require
+
+    def fake_require(name: str):
+        if name == "librosa":
+            raise MissingExtraError("librosa", "analysis")
+        return real(name)
+
+    monkeypatch.setattr("audio_core.analysis.require", fake_require)
+    monkeypatch.setattr(
+        "audio_core.analysis.detect_beats", lambda *a, **k: pytest.fail("beat model ran")
+    )
+    with pytest.raises(MissingExtraError):
+        run_analyze(audio, "x.wav")
+
+
+def test_chords_model_recorded_only_when_chords_exist(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = KeyInfo(key="A", mode="minor", camelot="8A", compatible=[])
+    chords = [Chord(start=0.0, end=2.0, label="Am")]
+    audio = _fake_analyze(monkeypatch, chords=chords)
+    monkeypatch.setattr("audio_core.analysis.estimate_key_essentia", lambda *a: info)
+    with_chords = run_analyze(audio, "x.wav")
+    assert with_chords.chords == chords
+    assert with_chords.models["chords"].name == "essentia-chordsdetectionbeats"
+
+    _fake_analyze(monkeypatch, chords=None)
+    without = run_analyze(audio, "x.wav")
+    assert without.chords is None
+    assert "chords" not in without.models
+
+
+def test_song_chords_skip_when_real_beats_are_too_few(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*_a, **_k):
+        raise AssertionError("detect_chords must not run")
+
+    monkeypatch.setattr("audio_core.analysis.detect_chords", fail)
+    beats = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5]
+    # Only two real beats (2.0, 2.5) after the extrapolated lead-in.
+    grid = Grid(bpm=120, time_signature="4/4", beats=beats, downbeats=[0.0], extrapolated_until=2.0)
+    assert detect_song_chords(np.zeros((2, 100), dtype=np.float32), grid) is None
+
+
+def test_song_chords_pass_only_real_beats(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = {}
+
+    def fake(_mono, beats, **_k):
+        seen["beats"] = list(beats)
+        return [Chord(start=1.0, end=2.0, label="C")]
+
+    monkeypatch.setattr("audio_core.analysis.detect_chords", fake)
+    beats = [0.0, 0.5, 1.0, 1.5, 2.0]
+    grid = Grid(bpm=120, time_signature="4/4", beats=beats, downbeats=[0.0], extrapolated_until=1.0)
+    chords = detect_song_chords(np.zeros((2, 100), dtype=np.float32), grid)
+    assert seen["beats"] == [1.0, 1.5, 2.0]
+    assert chords is not None
+
+
+def test_song_chords_empty_result_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("audio_core.analysis.detect_chords", lambda *a, **k: [])
+    grid = Grid(bpm=120, time_signature="4/4", beats=[0.0, 0.5, 1.0, 1.5], downbeats=[0.0])
+    assert detect_song_chords(np.zeros((2, 100), dtype=np.float32), grid) is None
