@@ -162,6 +162,7 @@ interface BodyProps {
  */
 function StudioBody(props: BodyProps) {
   const { song } = props;
+  const studio = useMemo(() => studioSources(song.artifacts), [song]);
   const [engine, setEngine] = useState<StudioEngine | null>(null);
 
   useEffect(() => {
@@ -170,7 +171,7 @@ function StudioBody(props: BodyProps) {
     // Publishing an external resource created by this effect; it cannot be created during render.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEngine(next);
-    next.load(studioSources(song.artifacts).sources, controller.signal).catch(() => {
+    next.load(studio.sources, controller.signal).catch(() => {
       // load() reports its own failures through the engine state; this only keeps a bug from
       // surfacing as an unhandled rejection.
       if (!controller.signal.aborted) next.reportFailure("network");
@@ -180,7 +181,7 @@ function StudioBody(props: BodyProps) {
       next.dispose();
       setEngine(null);
     };
-  }, [song]);
+  }, [studio]);
 
   if (!engine) {
     return (
@@ -189,11 +190,12 @@ function StudioBody(props: BodyProps) {
       </p>
     );
   }
-  return <StudioStage engine={engine} {...props} />;
+  return <StudioStage engine={engine} compressed={studio.compressed} {...props} />;
 }
 
 function StudioStage({
   engine,
+  compressed,
   songId,
   song,
   analysis,
@@ -201,7 +203,7 @@ function StudioStage({
   source,
   edited,
   onReload,
-}: BodyProps & { engine: StudioEngine }) {
+}: BodyProps & { engine: StudioEngine; compressed: boolean }) {
   const state = useEngineState(engine);
 
   const grid = analysis.grid;
@@ -278,7 +280,6 @@ function StudioStage({
     void engine.play();
   };
   const loadedCount = names.filter((name) => state.stems[name].phase === "ready").length;
-  const compressed = useMemo(() => studioSources(song.artifacts).compressed, [song]);
   const downloaded = names.reduce((sum, name) => sum + state.stems[name].loaded, 0);
 
   return (

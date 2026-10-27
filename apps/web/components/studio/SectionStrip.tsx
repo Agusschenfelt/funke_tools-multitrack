@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from
 import type { Section } from "@/lib/api";
 import type { StudioEngine } from "@/lib/audio/engine";
 import { barAt, moveBoundary, needsReview } from "@/lib/sections/edit";
-import { barTicks, buildStrip, stripItems } from "@/lib/strip";
+import { barTicks, buildStrip, DEFAULT_MIN_GAP_PX, stripItems } from "@/lib/strip";
 import { useWidth } from "./hooks";
 import { Playhead } from "./Playhead";
 import { seekFromClick } from "./Lane";
@@ -70,7 +70,7 @@ export function SectionStrip({
         duration,
         width,
         groups.flatMap((g) => (g.startBar === null ? [] : [g.startBar])),
-        undefined,
+        DEFAULT_MIN_GAP_PX,
         estimatedUntil,
       ),
     [downbeats, duration, width, groups, estimatedUntil],

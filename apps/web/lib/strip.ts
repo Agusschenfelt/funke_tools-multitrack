@@ -124,12 +124,15 @@ const STEPS = [1, 2, 4, 8, 16, 32, 64, 128];
  * keeps them `minGapPx` apart, dropping any regular tick that would crowd an anchor. Bars before
  * `estimatedUntil` are flagged so the UI can show them as estimated.
  */
+/** Closest two bar ticks may sit before the labels thin out. */
+export const DEFAULT_MIN_GAP_PX = 36;
+
 export function barTicks(
   downbeats: readonly number[],
   duration: number,
   widthPx: number,
   anchorBars: readonly number[],
-  minGapPx = 36,
+  minGapPx = DEFAULT_MIN_GAP_PX,
   estimatedUntil: number | null = null,
 ): BarTick[] {
   if (downbeats.length === 0 || duration <= 0 || widthPx <= 0) return [];

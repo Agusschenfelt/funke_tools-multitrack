@@ -15,9 +15,12 @@ is always a kept beat.
 Extrapolation rule. When the first detected beat lies after more than ``LEAD_IN_BARS`` (2) bars,
 the grid is extended backwards from the first stable bar (one bar whose intervals are within
 ``STABLE_TOLERANCE`` of the median) with the median interval of up to ``STABLE_BARS`` (4) stable
-bars, down to t >= 0. The downbeat phase comes from the first downbeat of the stable run and
-continues back one bar (beats per bar times the interval) at a time, snapped to the extrapolated
-beats. ``Grid.extrapolated_until`` is the time of the first detected beat.
+bars, down to t >= 0. The downbeat phase is anchored on the first detected downbeat at or after
+the first stable bar (not on a possibly unreliable first detected downbeat). From there bars are
+laid out by time, one bar (beats per bar times the interval) at a time, rather than by counting
+detected beats, and each is snapped to the nearest extrapolated beat when that is within
+``DOWNBEAT_SNAP_RATIO`` (0.25) of an interval. ``Grid.extrapolated_until`` is the time of the
+first detected beat.
 """
 
 import numpy as np
@@ -32,12 +35,23 @@ STABLE_BARS = 4
 STABLE_TOLERANCE = 0.12
 # Beats up to this fraction of an interval from the first detected beat are not extrapolated.
 MIN_GAP_RATIO = 0.5
+# A laid-out bar start snaps to an extrapolated beat at most this fraction of an interval away.
+DOWNBEAT_SNAP_RATIO = 0.25
 _EPS = 1e-3
 
 
 def _local_median(diffs: np.ndarray, i: int) -> float:
     lo, hi = max(0, i - OUTLIER_WINDOW), min(diffs.size, i + OUTLIER_WINDOW + 1)
     return float(np.median(diffs[lo:hi]))
+
+
+def _steady_anchor(beats: np.ndarray, i: int, m: float) -> float | None:
+    """Where the steady run puts the beat of pair (i, i+1): next minus ``m``, else previous plus."""
+    if i + 2 < beats.size:
+        return float(beats[i + 2] - m)
+    if i > 0:
+        return float(beats[i - 1] + m)
+    return None
 
 
 def remove_outlier_beats(
@@ -66,7 +80,7 @@ def remove_outlier_beats(
             break
         i, m = found
         # Pair (i, i+1): keep the one the steady run around it points at.
-        anchor = beats[i + 2] - m if i + 2 < beats.size else beats[i - 1] + m if i > 0 else None
+        anchor = _steady_anchor(beats, i, m)
         if anchor is None:
             drop, keep = i + 1, i
         elif abs(beats[i] - anchor) <= abs(beats[i + 1] - anchor):
@@ -131,7 +145,7 @@ def extrapolate_lead_in(grid: Grid, beats_per_bar: int) -> Grid:
     bar = beats_per_bar * interval
     lattice = anchor_time - bar * np.arange(1, int(anchor_time / bar) + 2)
     nearest = np.abs(extra[None, :] - lattice[:, None]).argmin(axis=1)
-    close = np.abs(extra[nearest] - lattice) <= 0.25 * interval
+    close = np.abs(extra[nearest] - lattice) <= DOWNBEAT_SNAP_RATIO * interval
     extra_downbeats = np.unique(extra[nearest[close]])
     downbeats = np.concatenate([extra_downbeats, np.asarray(grid.downbeats)])
     return grid.model_copy(

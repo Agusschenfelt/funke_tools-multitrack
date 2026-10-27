@@ -120,7 +120,7 @@ function initialState(): EngineState {
 
 /** Cuts a decoded preview so it starts at the same sample as its WAV stem (see `previewWindow`). */
 function alignPreview(ctx: AudioContext, buffer: AudioBuffer, alignment: PreviewAlignment): AudioBuffer {
-  const { start, length } = previewWindow(buffer.length, alignment);
+  const { start, length } = previewWindow(buffer.length, alignment, buffer.sampleRate);
   if (start === 0 && length === buffer.length) return buffer;
   const aligned = ctx.createBuffer(buffer.numberOfChannels, length, buffer.sampleRate);
   for (let channel = 0; channel < buffer.numberOfChannels; channel++) {

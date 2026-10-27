@@ -24,7 +24,7 @@ describe("stems", () => {
       expect(compressed).toBe(true);
       expect(sources.map((s) => s.name)).toEqual(["drums", "bass"]);
       expect(sources[0].url).toMatch(/drums\.m4a$/);
-      expect(sources[0].alignment).toEqual({ samples: 1000, primingSamples: 1024 });
+      expect(sources[0].alignment).toEqual({ samples: 1000, primingSamples: 1024, sampleRate: 44100 });
     });
 
     it("falls back to the WAV stems for older songs", () => {

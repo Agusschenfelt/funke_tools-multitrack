@@ -19,6 +19,8 @@ export interface PreviewAlignment {
   samples: number;
   /** Encoder delay at the start of the preview when the decoder does not hide it. */
   primingSamples: number;
+  /** Sample rate `samples` and `primingSamples` are counted in (the stemset's, not the context's). */
+  sampleRate: number;
 }
 
 export interface StemSource {
@@ -70,7 +72,11 @@ export function studioSources(
   if (meta && artifacts.previews?.length) {
     const previews = new Map(orderStems(artifacts.previews).map((s) => [s.name, s.url]));
     if (wavs.length > 0 && wavs.every((s) => previews.has(s.name))) {
-      const alignment = { samples: meta.samples, primingSamples: meta.priming_samples };
+      const alignment = {
+        samples: meta.samples,
+        primingSamples: meta.priming_samples,
+        sampleRate: meta.sample_rate,
+      };
       return {
         sources: wavs.map((s) => ({ name: s.name, url: previews.get(s.name) as string, alignment })),
         compressed: true,

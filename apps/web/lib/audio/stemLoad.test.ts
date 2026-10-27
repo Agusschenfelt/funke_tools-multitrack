@@ -191,7 +191,7 @@ describe("loadStems", () => {
 });
 
 describe("previewWindow", () => {
-  const alignment = { samples: 10_000, primingSamples: 1024 };
+  const alignment = { samples: 10_000, primingSamples: 1024, sampleRate: 44_100 };
 
   it("keeps a preview whose decoder already hid the encoder delay", () => {
     expect(previewWindow(10_000, alignment)).toEqual({ start: 0, length: 10_000 });
@@ -201,5 +201,25 @@ describe("previewWindow", () => {
   it("cuts the encoder delay and the padding when the decoder kept them", () => {
     expect(previewWindow(10_000 + 1024, alignment)).toEqual({ start: 1024, length: 10_000 });
     expect(previewWindow(10_000 + 1024 + 700, alignment)).toEqual({ start: 1024, length: 10_000 });
+  });
+
+  it("converts priming and length to the decoded rate (context at 48 kHz)", () => {
+    const rate = 48_000;
+    const samples = Math.round((10_000 * rate) / 44_100); // 10884
+    const priming = Math.round((1024 * rate) / 44_100); // 1115
+    expect(previewWindow(samples, alignment, rate)).toEqual({ start: 0, length: samples });
+    // Delay hidden: a few frames of padding stays below the converted priming.
+    expect(previewWindow(samples + 40, alignment, rate)).toEqual({ start: 0, length: samples + 40 });
+    // Delay kept: cut the converted priming, not 1024, and keep the converted length.
+    expect(previewWindow(samples + priming + 30, alignment, rate)).toEqual({
+      start: priming,
+      length: samples,
+    });
+    // Unconverted numbers would have cut at 1024 and judged this one as already trimmed.
+    expect(previewWindow(samples + 1100, alignment, rate).start).toBe(0);
+  });
+
+  it("is the identity conversion at the stemset's own rate", () => {
+    expect(previewWindow(11_024, alignment, 44_100)).toEqual({ start: 1024, length: 10_000 });
   });
 });

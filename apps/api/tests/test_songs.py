@@ -189,3 +189,14 @@ def test_cors_allows_configured_origin(client):
         headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"},
     )
     assert "access-control-allow-origin" not in other.headers
+
+
+def test_preview_metadata_without_a_sample_rate_is_not_guessed(client, store, song):
+    sid = song["id"]
+    store.put_bytes(sid, "stems/drums.wav", b"wav")
+    store.put_bytes(sid, "stems/preview/drums.m4a", b"m4a")
+    store.put_bytes(
+        sid, "stems/stemset.json", b'{"samples": 1000, "preview": {"priming_samples": 1024}}'
+    )
+    artifacts = client.get(f"/songs/{sid}").json()["artifacts"]
+    assert artifacts["preview"] is None

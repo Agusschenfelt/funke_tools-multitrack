@@ -206,7 +206,7 @@ describe("StudioEngine.load failure paths", () => {
 });
 
 describe("StudioEngine.load with compressed previews", () => {
-  const alignment = { samples: 5000, primingSamples: 1024 };
+  const alignment = { samples: 5000, primingSamples: 1024, sampleRate: 44100 };
   const preview: StemSource[] = [{ name: "drums", url: "http://x/drums", alignment }];
 
   it("cuts the encoder delay when the decoder returned it", async () => {

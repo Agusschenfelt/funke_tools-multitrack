@@ -69,13 +69,17 @@ def pack_stored_name(ctx: AppContext, job: Job, filename: str) -> str | None:
 
 
 def _preview_meta(ctx: AppContext, song: Song) -> PreviewMeta | None:
-    """Preview encoding facts from ``stemset.json``; None when absent or unreadable."""
+    """Preview encoding facts from ``stemset.json``; None when absent or unreadable.
+
+    A missing sample rate is not guessed: without it the preview cannot be aligned, so there is
+    no preview metadata.
+    """
     try:
         data = json.loads(ctx.storage.get_bytes(song.id, names.STEMSET))
         info = data["preview"]
         return PreviewMeta(
             samples=int(data["samples"]),
-            sample_rate=int(data.get("sample_rate", 44100)),
+            sample_rate=int(data["sample_rate"]),
             priming_samples=int(info["priming_samples"]),
         )
     except (names.StorageError, KeyError, TypeError, ValueError):
