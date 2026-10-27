@@ -7,10 +7,24 @@ interface MixBarProps {
   preset: MixPreset;
   disabled: boolean;
   onPreset: (id: PresetId) => void;
+  /** What the active loop covers ("compases 5 a 8"); null when none. */
+  loopLabel: string | null;
+  /** The section under the playhead can be repeated. */
+  canLoopSection: boolean;
+  onLoopSection: () => void;
+  onClearLoop: () => void;
 }
 
 /** Quick mixes above the lanes. "Personalizado" lights up by itself once mute/solo is changed by hand. */
-export function MixBar({ preset, disabled, onPreset }: MixBarProps) {
+export function MixBar({
+  preset,
+  disabled,
+  onPreset,
+  loopLabel,
+  canLoopSection,
+  onLoopSection,
+  onClearLoop,
+}: MixBarProps) {
   return (
     <div className={styles.bar}>
       <div className={styles.group} role="group" aria-label="Mezclas rápidas">
@@ -33,6 +47,28 @@ export function MixBar({ preset, disabled, onPreset }: MixBarProps) {
         >
           {CUSTOM_LABEL}
         </span>
+      </div>
+      <div className={styles.loop}>
+        {loopLabel ? (
+          <>
+            <p className={`${styles.loopState} mono`}>Loop: {loopLabel}</p>
+            <button type="button" className={styles.small} aria-keyshortcuts="L" onClick={onClearLoop}>
+              Quitar loop
+            </button>
+          </>
+        ) : (
+          <>
+            <p className={styles.hint}>Arrastrá sobre la regla para repetir un tramo.</p>
+            <button
+              type="button"
+              className={styles.small}
+              disabled={disabled || !canLoopSection}
+              onClick={onLoopSection}
+            >
+              Repetir esta sección
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

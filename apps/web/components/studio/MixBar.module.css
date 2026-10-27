@@ -65,8 +65,50 @@
   color: var(--ink);
 }
 
+.loop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.loopState {
+  font-size: var(--text-sm);
+}
+
+.hint {
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.small {
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.small:hover:not(:disabled) {
+  background: var(--ink-lifted);
+}
+
+.small:disabled {
+  color: var(--paper-dim);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 @media (pointer: coarse) {
-  .segment {
+  .segment,
+  .small {
     min-height: var(--touch);
   }
 }
@@ -74,6 +116,10 @@
 @media (max-width: 47.99rem) {
   .bar {
     padding: var(--space-2) 0;
+  }
+
+  .hint {
+    display: none;
   }
 
   /* Phone: the strip scrolls sideways instead of wrapping into rows. */

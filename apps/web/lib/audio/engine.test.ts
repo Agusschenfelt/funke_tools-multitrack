@@ -7,13 +7,20 @@ class FakeSource {
   stopped = false;
   disconnected = false;
   buffer: unknown = null;
+  loop = false;
+  loopStart = 0;
+  loopEnd = 0;
+  startedAt: number | null = null;
+  offset: number | null = null;
   onended: (() => void) | null = null;
   connect() {}
   disconnect() {
     this.disconnected = true;
   }
-  start() {
+  start(when?: number, offset?: number) {
     this.started = true;
+    this.startedAt = when ?? null;
+    this.offset = offset ?? null;
   }
   stop() {
     this.stopped = true;
@@ -359,6 +366,145 @@ describe("StudioEngine pan and presets", () => {
     expect(mix.vocals.muted).toBe(true);
     expect(mix.drums.muted).toBe(false);
     expect(mix.bass.solo).toBe(false);
+    engine.dispose();
+  });
+});
+
+describe("StudioEngine loop A-B", () => {
+  const loop = { start: 10, end: 12 };
+
+  beforeEach(() => {
+    // A 20 s song, so the loop fits inside it.
+    decodedFrames = 44100 * 20;
+  });
+
+  it("starts the stems looping inside the range", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setLoop(loop);
+    expect(engine.getSnapshot().loop).toEqual(loop);
+    await engine.play();
+    expect(created.sources).toHaveLength(3);
+    for (const source of created.sources) {
+      expect(source).toMatchObject({ loop: true, loopStart: 10, loopEnd: 12, offset: 10 });
+    }
+    engine.dispose();
+  });
+
+  it("wraps the reported position at the loop end", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(11);
+    engine.setLoop(loop);
+    await engine.play();
+    created.contexts[0].currentTime = 0.06 + 0.5;
+    expect(engine.getPosition()).toBeCloseTo(11.5, 6);
+    created.contexts[0].currentTime = 0.06 + 1.5;
+    expect(engine.getPosition()).toBeCloseTo(10.5, 6);
+    engine.dispose();
+  });
+
+  it("clears a range that is too short to be a loop", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setLoop({ start: 5, end: 5.1 });
+    expect(engine.getSnapshot().loop).toBeNull();
+    engine.dispose();
+  });
+
+  it("paused: moves the playhead to the loop start when it is outside", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(3);
+    engine.setLoop(loop);
+    expect(engine.getPosition()).toBe(10);
+    engine.dispose();
+  });
+
+  it("playing: a range that holds the playhead applies without restarting", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(11);
+    await engine.play();
+    const sources = [...created.sources];
+    created.contexts[0].currentTime = 0.06 + 0.25;
+    engine.setLoop(loop);
+    expect(created.sources).toHaveLength(sources.length);
+    expect(sources.every((s) => s.loop && s.loopStart === 10 && s.loopEnd === 12 && !s.stopped)).toBe(true);
+    expect(engine.getPosition()).toBeCloseTo(11.25, 6);
+    created.contexts[0].currentTime = 0.06 + 1.25;
+    expect(engine.getPosition()).toBeCloseTo(10.25, 6);
+    engine.dispose();
+  });
+
+  it("playing: a range away from the playhead restarts inside it", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    await engine.play();
+    const first = [...created.sources];
+    engine.setLoop(loop);
+    expect(first.every((s) => s.stopped)).toBe(true);
+    expect(created.sources.slice(first.length).map((s) => s.offset)).toEqual([10, 10, 10]);
+    expect(engine.getPosition()).toBe(10);
+    engine.dispose();
+  });
+
+  it("clearing it while playing lets the stems run on without a gap", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.seek(11);
+    engine.setLoop(loop);
+    await engine.play();
+    const sources = [...created.sources];
+    created.contexts[0].currentTime = 0.06 + 1.5;
+    engine.clearLoop();
+    expect(engine.getSnapshot().loop).toBeNull();
+    expect(sources.every((s) => !s.loop && !s.stopped)).toBe(true);
+    expect(engine.getPosition()).toBeCloseTo(10.5, 6);
+    created.contexts[0].currentTime += 1;
+    expect(engine.getPosition()).toBeCloseTo(11.5, 6);
+    engine.dispose();
+  });
+
+  it("seeking outside the loop drops it; inside keeps it", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setLoop(loop);
+    engine.seek(11.5);
+    expect(engine.getSnapshot().loop).toEqual(loop);
+    engine.seek(20);
+    expect(engine.getSnapshot().loop).toBeNull();
+    engine.dispose();
+  });
+
+  it("schedules clicks on both sides of the wrap", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.setTimeline({
+      beats: [],
+      clicks: [
+        { time: 10.1, accent: false },
+        { time: 10.6, accent: false },
+        { time: 11.8, accent: true },
+      ],
+      cues: [],
+    });
+    engine.seek(11.5);
+    engine.setLoop(loop);
+    await engine.play();
+    const ctx = created.contexts[0];
+    for (let step = 0; step < 26; step += 1) {
+      ctx.currentTime += 0.1;
+      vi.advanceTimersByTime(25);
+    }
+    const clicks = created.sources.slice(3).map((s) => s.startedAt as number);
+    // 11.8 is 0.3 s after the start; the wrap at 12.0 comes 0.5 s in, so 10.1 and 10.6 follow at
+    // 0.6 s and 1.1 s; the next lap (2 s long) brings 11.8 again 2.3 s in.
+    const base = 0.06;
+    const expected = [0.3, 0.6, 1.1, 2.3].map((t) => base + t);
+    expect(clicks.slice(0, 4).map((t) => Math.round(t * 1000) / 1000)).toEqual(
+      expected.map((t) => Math.round(t * 1000) / 1000),
+    );
     engine.dispose();
   });
 });

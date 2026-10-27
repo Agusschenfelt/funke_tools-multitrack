@@ -3,11 +3,14 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { Section } from "@/lib/api";
 import type { StudioEngine } from "@/lib/audio/engine";
+import type { LoopRange } from "@/lib/audio/loop";
 import { barAt, moveBoundary, needsReview } from "@/lib/sections/edit";
 import { barTicks, buildStrip, DEFAULT_MIN_GAP_PX, stripItems } from "@/lib/strip";
 import { useWidth } from "./hooks";
+import { LoopBand } from "./LoopBand";
 import { Playhead } from "./Playhead";
 import { seekFromClick } from "./Lane";
+import { useLoopSelect } from "./useLoopSelect";
 import styles from "./SectionStrip.module.css";
 
 const ESTIMATED_ID = "estimated-grid-legend";
@@ -20,6 +23,8 @@ interface SectionStripProps {
   /** Seconds before which the grid is estimated (beatless intro); null when it was all detected. */
   estimatedUntil?: number | null;
   duration: number;
+  /** Section being repeated, drawn behind the ruler and the lanes. */
+  loop?: LoopRange | null;
   /** Flat index of the section under the playhead. */
   activeIndex: number | null;
   selected: number | null;
@@ -42,6 +47,7 @@ export function SectionStrip({
   downbeats,
   estimatedUntil = null,
   duration,
+  loop = null,
   activeIndex,
   selected,
   editedOnServer,
@@ -52,6 +58,7 @@ export function SectionStrip({
 }: SectionStripProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const width = useWidth(trackRef);
+  const loopSelect = useLoopSelect({ engine, duration, downbeats, area: trackRef });
   const [drag, setDrag] = useState<{ index: number; time: number } | null>(null);
   // A press arms an edge; only a move starts the drag, so a plain click never shifts it.
   const armed = useRef<number | null>(null);
@@ -208,7 +215,17 @@ export function SectionStrip({
             {ESTIMATED_GRID_LEGEND}
           </span>
         ) : null}
-        <div className={styles.bars} aria-hidden="true">
+        <LoopBand
+          range={loopSelect.preview ?? loop}
+          duration={duration}
+          preview={loopSelect.preview !== null}
+        />
+        <div
+          className={styles.bars}
+          aria-hidden="true"
+          title="Arrastrá para repetir un tramo (Alt: sin ajustar a compases)"
+          {...loopSelect.handlers}
+        >
           {duration > 0 && estimatedUntil ? (
             <span
               className={styles.estimated}

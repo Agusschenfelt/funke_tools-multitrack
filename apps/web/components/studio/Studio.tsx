@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { StudioEngine, type LoadFailure } from "@/lib/audio/engine";
 import { beatsPerBar } from "@/lib/audio/grid";
+import { loopLabel as describeLoop, snapLoop } from "@/lib/audio/loop";
 import { stemGains } from "@/lib/audio/mix";
 import { loadPans, savePans } from "@/lib/audio/panStore";
 import { detectPreset } from "@/lib/audio/presets";
@@ -255,8 +256,15 @@ function StudioStage({
   // Space plays and pauses unless it would press a control or edit text.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat || event.ctrlKey || event.metaKey) return;
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
+      // L clears the loop from anywhere except a text field.
+      if (event.key === "l" || event.key === "L") {
+        if (target?.closest("input, textarea, select, [contenteditable]")) return;
+        engine.clearLoop();
+        return;
+      }
+      if (event.code !== "Space") return;
       if (target?.closest("button, a, input, select, textarea, [role='slider']")) return;
       event.preventDefault();
       engine.toggle();
@@ -351,6 +359,7 @@ function StudioStage({
           downbeats={downbeats}
           estimatedUntil={grid?.extrapolated_until ?? null}
           duration={duration}
+          loop={state.loop}
           activeIndex={activeIndex}
           selected={editor.selected}
           editedOnServer={editor.editedOnServer}
@@ -378,6 +387,14 @@ function StudioStage({
           preset={preset}
           disabled={state.status !== "ready"}
           onPreset={(id) => engine.applyPreset(id)}
+          loopLabel={state.loop ? describeLoop(state.loop, downbeats, duration) : null}
+          canLoopSection={activeSpan !== null}
+          onLoopSection={() => {
+            if (!activeSpan) return;
+            const range = snapLoop(activeSpan.start, activeSpan.end, { downbeats, duration, snap: true });
+            if (range) engine.setLoop(range);
+          }}
+          onClearLoop={() => engine.clearLoop()}
         />
         <div className={lanes.lanes}>
           {names.map((name, index) => (
@@ -390,6 +407,7 @@ function StudioStage({
               audible={gains[name] > 0}
               duration={duration}
               activeSpan={activeSpan}
+              loop={state.loop}
               index={index}
               count={names.length}
             />

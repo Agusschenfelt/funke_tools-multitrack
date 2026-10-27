@@ -4,9 +4,11 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import type { StemView } from "@/lib/audio/engine";
 import type { StudioEngine } from "@/lib/audio/engine";
 import { panText, type StemMix } from "@/lib/audio/mix";
+import type { LoopRange } from "@/lib/audio/loop";
 import { STEM_LABEL, type StemName } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
 import type { StripSpan } from "@/lib/strip";
+import { LoopBand } from "./LoopBand";
 import { Playhead } from "./Playhead";
 import { Waveform } from "./Waveform";
 import styles from "./Lane.module.css";
@@ -20,6 +22,7 @@ interface LaneProps {
   audible: boolean;
   duration: number;
   activeSpan: StripSpan | null;
+  loop: LoopRange | null;
   index: number;
   count: number;
 }
@@ -90,6 +93,7 @@ export function Lane({
   audible,
   duration,
   activeSpan,
+  loop,
   index,
   count,
 }: LaneProps) {
@@ -139,6 +143,7 @@ export function Lane({
         onClick={(event) => seekFromClick(event, engine, duration)}
       >
         <Waveform peaks={view.peaks} quiet={!audible} />
+        <LoopBand range={loop} duration={duration} />
         {activeSpan && duration > 0 && (
           <span
             className={styles.mark}

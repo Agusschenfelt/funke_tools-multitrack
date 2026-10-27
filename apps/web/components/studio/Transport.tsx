@@ -72,6 +72,7 @@ export function Transport({
         downbeats={downbeats}
         duration={duration}
         activeGroup={activeGroup}
+        loop={state.loop}
       />
       <div className={styles.controls}>
         <button

@@ -18,6 +18,7 @@ import type { SectionName } from "@/lib/api";
 import { clickWave } from "./click";
 import { clampPan, DEFAULT_MIX, stemGains, type StemMix } from "./mix";
 import { applyPresetToMix, type PresetId } from "./presets";
+import { inLoop, normalizeLoop, songPositionAt, windowSegments, type LoopRange } from "./loop";
 import { bucketCount, computePeaks, type Peaks } from "./peaks";
 import {
   eventsInWindow,
@@ -68,6 +69,8 @@ export interface EngineState {
   cuesOn: boolean;
   cueLanguage: CueLanguage;
   cuesStatus: "idle" | "loading" | "ready" | "error";
+  /** Section A-B being repeated, or null. Playback never leaves it while it is set. */
+  loop: LoopRange | null;
 }
 
 export interface EngineTimeline {
@@ -84,10 +87,13 @@ interface CueSample {
 
 interface Run {
   ctxStart: number;
+  /** Song position at `ctxStart`. A live loop change moves both so the pair stays consistent. */
   songStart: number;
-  scheduledTo: number;
+  /** Seconds since `ctxStart` that click and cue events were already scheduled up to. */
+  scheduledElapsed: number;
   sources: AudioBufferSourceNode[];
-  oneShots: Set<AudioBufferSourceNode>;
+  /** Click and cue sources that have not finished, with the context time each one starts at. */
+  oneShots: Map<AudioBufferSourceNode, number>;
   lastCue: GainNode | null;
 }
 
@@ -116,6 +122,7 @@ function initialState(): EngineState {
     cuesOn: false,
     cueLanguage: "es",
     cuesStatus: "idle",
+    loop: null,
   };
 }
 
@@ -244,6 +251,7 @@ export class StudioEngine {
       stems: emptyStems(),
       playing: false,
       duration: 0,
+      loop: null,
     });
 
     try {
@@ -321,7 +329,7 @@ export class StudioEngine {
     const { run, ctx } = this;
     if (!run || !ctx) return this.pausedAt;
     const elapsed = Math.max(0, ctx.currentTime - run.ctxStart);
-    return Math.min(this.state.duration, run.songStart + elapsed);
+    return Math.min(this.state.duration, songPositionAt(run.songStart, elapsed, this.state.loop));
   }
 
   readonly toggle = () => {
@@ -339,7 +347,9 @@ export class StudioEngine {
       return;
     }
     if (this.disposed || token !== this.playToken || this.state.playing) return;
-    const from = this.pausedAt >= this.state.duration - 0.05 ? 0 : this.pausedAt;
+    const { loop } = this.state;
+    let from = this.pausedAt >= this.state.duration - 0.05 ? 0 : this.pausedAt;
+    if (loop && !inLoop(loop, from)) from = loop.start;
     this.startRun(ctx, from);
     this.set({ playing: true });
   }
@@ -354,6 +364,8 @@ export class StudioEngine {
 
   seek(seconds: number) {
     const target = Math.min(this.state.duration, Math.max(0, seconds));
+    // Jumping out of the loop leaves it: the band would otherwise promise a wrap that no longer happens.
+    if (this.state.loop && !inLoop(this.state.loop, target)) this.set({ loop: null });
     if (this.run && this.ctx) {
       this.stopRun();
       this.startRun(this.ctx, target);
@@ -372,15 +384,16 @@ export class StudioEngine {
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(node);
+      this.applyLoop(source, this.state.loop);
       source.start(ctxStart, offset);
       sources.push(source);
     }
     this.run = {
       ctxStart,
       songStart: offset,
-      scheduledTo: offset,
+      scheduledElapsed: 0,
       sources,
-      oneShots: new Set(),
+      oneShots: new Map(),
       lastCue: null,
     };
     this.timer = setInterval(this.tick, TICK_MS);
@@ -394,7 +407,7 @@ export class StudioEngine {
     this.run = null;
     if (!run) return;
     for (const source of run.sources) stop(source);
-    for (const source of run.oneShots) stop(source);
+    for (const source of run.oneShots.keys()) stop(source);
   }
 
   private readonly tick = () => {
@@ -407,35 +420,40 @@ export class StudioEngine {
       return;
     }
     const now = ctx.currentTime;
-    const horizon = run.songStart + (now + LOOKAHEAD - run.ctxStart);
-    const from = Math.max(run.scheduledTo, run.songStart);
-    if (horizon <= from) return;
-    run.scheduledTo = horizon;
+    const from = Math.max(run.scheduledElapsed, 0);
+    const to = now + LOOKAHEAD - run.ctxStart;
+    if (to <= from) return;
+    run.scheduledElapsed = to;
 
+    // Each stretch is continuous song time; a wrap of the loop starts a new one, so events on
+    // both sides of it land at the right moment on the context clock.
+    const stretches = windowSegments(run.songStart, from, to, this.state.loop);
     const clickBuffers = this.clickBuffers;
-    if (clickBuffers && this.clickBus) {
-      for (const event of eventsInWindow(this.timeline.clicks, from, horizon)) {
-        const at = run.ctxStart + (event.time - run.songStart);
-        if (at < now - 0.005) continue;
-        this.oneShot(run, event.accent ? clickBuffers.accent : clickBuffers.normal, this.clickBus, at);
-      }
-    }
-
     const library = this.cueLibrary.get(this.state.cueLanguage);
-    if (library && this.cueBus) {
-      for (const cue of eventsInWindow(this.timeline.cues, from, horizon)) {
-        const sample = library.get(cue.name);
-        const at = run.ctxStart + (cue.time - run.songStart);
-        if (!sample || at < now - 0.005) continue;
-        // A cue still sounding when the next one starts is faded out there, as in the pack.
-        if (run.lastCue) {
-          run.lastCue.gain.setValueAtTime(1, Math.max(now, at - 0.003));
-          run.lastCue.gain.linearRampToValueAtTime(0, Math.max(now, at));
+    for (const stretch of stretches) {
+      const when = (time: number) => run.ctxStart + stretch.at + (time - stretch.from);
+      if (clickBuffers && this.clickBus) {
+        for (const event of eventsInWindow(this.timeline.clicks, stretch.from, stretch.to)) {
+          const at = when(event.time);
+          if (at < now - 0.005) continue;
+          this.oneShot(run, event.accent ? clickBuffers.accent : clickBuffers.normal, this.clickBus, at);
         }
-        const gain = ctx.createGain();
-        gain.connect(this.cueBus);
-        this.oneShot(run, sample.buffer, gain, at, sample.onset);
-        run.lastCue = gain;
+      }
+      if (library && this.cueBus) {
+        for (const cue of eventsInWindow(this.timeline.cues, stretch.from, stretch.to)) {
+          const sample = library.get(cue.name);
+          const at = when(cue.time);
+          if (!sample || at < now - 0.005) continue;
+          // A cue still sounding when the next one starts is faded out there, as in the pack.
+          if (run.lastCue) {
+            run.lastCue.gain.setValueAtTime(1, Math.max(now, at - 0.003));
+            run.lastCue.gain.linearRampToValueAtTime(0, Math.max(now, at));
+          }
+          const gain = ctx.createGain();
+          gain.connect(this.cueBus);
+          this.oneShot(run, sample.buffer, gain, at, sample.onset);
+          run.lastCue = gain;
+        }
       }
     }
   };
@@ -450,8 +468,61 @@ export class StudioEngine {
       run.oneShots.delete(source);
       source.disconnect();
     };
-    source.start(Math.max(at, ctx.currentTime), offset);
-    run.oneShots.add(source);
+    const startAt = Math.max(at, ctx.currentTime);
+    source.start(startAt, offset);
+    run.oneShots.set(source, startAt);
+  }
+
+  /* ------------------------------------------------------------- loop */
+
+  private applyLoop(source: AudioBufferSourceNode, loop: LoopRange | null) {
+    source.loop = loop !== null;
+    if (loop) {
+      source.loopStart = loop.start;
+      source.loopEnd = loop.end;
+    }
+  }
+
+  /**
+   * Repeats `range` (null clears it). The stems wrap natively inside their buffers, which is
+   * sample-accurate; clicks and cues are scheduled across the wrap by `windowSegments`. While
+   * playing, a range that contains the playhead takes effect without a gap; one that does not
+   * moves the playhead to its start. Paused, the playhead moves there so Play starts the loop.
+   */
+  setLoop(range: LoopRange | null) {
+    if (this.disposed) return;
+    const next = range ? normalizeLoop(range, this.state.duration) : null;
+    const { run, ctx } = this;
+    const position = run && ctx ? this.getPosition() : this.pausedAt;
+    this.set({ loop: next });
+    if (!run || !ctx) {
+      if (next && !inLoop(next, position)) this.pausedAt = next.start;
+      return;
+    }
+    if (next && !inLoop(next, position)) {
+      this.stopRun();
+      this.startRun(ctx, next.start);
+      return;
+    }
+    const now = ctx.currentTime;
+    // Events scheduled ahead assumed the old wrap; drop the ones not yet sounding and schedule again.
+    for (const [source, startsAt] of run.oneShots) {
+      if (startsAt > now) {
+        stop(source);
+        run.oneShots.delete(source);
+      }
+    }
+    if (now >= run.ctxStart) {
+      run.songStart = position;
+      run.ctxStart = now;
+    }
+    run.scheduledElapsed = 0;
+    for (const source of run.sources) this.applyLoop(source, next);
+    this.tick();
+  }
+
+  clearLoop() {
+    this.setLoop(null);
   }
 
   /* -------------------------------------------------------------- mix */
