@@ -142,7 +142,7 @@ provides-extras = ["ml", "analysis", "essentia"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "audio-core", extras = ["ml", "analysis"] },
+    { name = "audio-core", extras = ["ml", "analysis", "essentia"] },
     { name = "pytest" },
     { name = "ruff" },
 ]

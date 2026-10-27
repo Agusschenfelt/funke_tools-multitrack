@@ -25,12 +25,32 @@ class Grid(BaseModel):
     extrapolated_until: float | None = None
 
 
+class KeyAlternative(BaseModel):
+    """A second plausible key, shown when the estimate is doubtful (often a relative or fifth)."""
+
+    key: str
+    mode: str
+    camelot: str
+
+
 class KeyInfo(BaseModel):
     key: str
     mode: str
     camelot: str
     compatible: list[str]
     note: str | None = None
+    # 0-1 strength of the estimate; absent for analyses made before it was recorded.
+    confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    # Set only when the top candidates are close or the chords disagree with the estimate.
+    alternative: KeyAlternative | None = None
+
+
+class Chord(BaseModel):
+    """A chord over a span of the song, in seconds; the label is ``A``, ``C#m`` (sharps only)."""
+
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(ge=0, allow_inf_nan=False)
+    label: str
 
 
 class Loudness(BaseModel):
@@ -46,6 +66,8 @@ class Analysis(BaseModel):
     key: KeyInfo | None
     loudness: Loudness | None
     models: dict[str, ModelVersion]
+    # Beat-aligned chord segments; absent when chords were not detected (no Essentia).
+    chords: list[Chord] | None = None
 
 
 class Stem(BaseModel):
