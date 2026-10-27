@@ -221,8 +221,27 @@
   cursor: pointer;
 }
 
+.detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail summary::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: var(--space-2);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-0.1rem) rotate(45deg);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
 .detail[open] summary {
   color: var(--paper);
+}
+
+.detail[open] summary::after {
+  transform: translateY(0.1rem) rotate(225deg);
 }
 
 @media (prefers-reduced-motion: no-preference) {

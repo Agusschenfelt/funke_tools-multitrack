@@ -31,6 +31,9 @@
 
 /* The name is a button that renames; it looks like the heading it sits in. */
 .titleButton {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
   max-width: 100%;
   padding: 0;
   overflow: hidden;
@@ -44,9 +47,37 @@
   cursor: text;
 }
 
-.titleButton:hover {
+/* A dotted rule and a drawn pencil say "rename" at rest, on touch too (no hover needed). */
+.titleText {
+  min-width: 0;
+  overflow: hidden;
   text-decoration: underline dotted var(--graphite);
+  text-decoration-thickness: 1px;
+  text-overflow: ellipsis;
   text-underline-offset: 0.25em;
+}
+
+.titleButton[data-fallback] {
+  color: var(--paper-dim);
+  font-weight: 600;
+}
+
+.pencil {
+  flex: none;
+  align-self: center;
+  fill: none;
+  stroke: var(--paper-dim);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.titleButton:hover .titleText {
+  text-decoration-color: var(--paper);
+}
+
+.titleButton:hover .pencil {
+  stroke: var(--paper);
 }
 
 .duration {
@@ -135,6 +166,18 @@
 
 .export:active {
   background: var(--orange-press);
+}
+
+/* Unsaved edits: Guardar is the one orange action, so the export steps back to an outline. */
+.export[data-blocked] {
+  border: 1px solid var(--graphite);
+  background: transparent;
+  color: var(--paper-dim);
+  cursor: not-allowed;
+}
+
+.export[data-blocked]:hover {
+  background: var(--ink-lifted);
 }
 
 .hold {
@@ -239,6 +282,22 @@
     overflow: visible;
     white-space: normal;
     text-overflow: clip;
+  }
+
+  /* Wrapped, the pencil follows the last word instead of floating at the box's edge. */
+  .titleButton {
+    display: inline;
+  }
+
+  .titleText {
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .pencil {
+    display: inline-block;
+    margin-left: var(--space-2);
+    vertical-align: -0.1em;
   }
 
   .export {

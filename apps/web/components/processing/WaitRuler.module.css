@@ -64,14 +64,19 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /* The mark never dims: it breathes in thickness, so it stays at full orange against the ink. */
   .bar[data-tick]::after {
-    animation: tick 1.2s steps(1, end) infinite;
+    transform-origin: bottom;
+    animation: breathe 1.6s var(--ease-out) infinite alternate;
   }
 }
 
-@keyframes tick {
-  50% {
-    opacity: 0.25;
+@keyframes breathe {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(1.75);
   }
 }
 

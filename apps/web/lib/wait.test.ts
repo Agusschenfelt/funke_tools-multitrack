@@ -68,10 +68,10 @@ describe("rulerPosition", () => {
 
 describe("separationEstimate", () => {
   it("is 1.5 s per audio second, rounded to minutes, and labelled as an estimate", () => {
-    expect(separationEstimate(240)).toBe("Suele tardar unos 6 minutos para un tema de 4. Es una estimación.");
+    expect(separationEstimate(240)).toBe("Suele tardar unos 6 minutos para un tema de 4 minutos. Es una estimación.");
   });
   it("handles short songs and singular minutes", () => {
-    expect(separationEstimate(30)).toBe("Suele tardar cerca de 1 minuto para un tema de 1. Es una estimación.");
+    expect(separationEstimate(30)).toBe("Suele tardar cerca de 1 minuto para un tema de 1 minuto. Es una estimación.");
   });
   it("says nothing without a usable duration", () => {
     expect(separationEstimate(null)).toBe("");

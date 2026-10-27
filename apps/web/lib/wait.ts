@@ -94,7 +94,7 @@ function minutesWord(n: number): string {
   return n === 1 ? "1 minuto" : `${n} minutos`;
 }
 
-/** "Suele tardar unos 6 minutos para un tema de 4. Es una estimación." Empty without a duration. */
+/** "Suele tardar unos 6 minutos para un tema de 4 minutos. Es una estimación." Empty without a duration. */
 export function separationEstimate(durationSeconds: number | null | undefined): string {
   if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     return "";
@@ -102,7 +102,7 @@ export function separationEstimate(durationSeconds: number | null | undefined): 
   const wait = Math.max(1, Math.round((durationSeconds * SEPARATION_SECONDS_PER_AUDIO_SECOND) / 60));
   const song = Math.max(1, Math.round(durationSeconds / 60));
   const how = wait === 1 ? "cerca de" : "unos";
-  return `Suele tardar ${how} ${minutesWord(wait)} para un tema de ${song}. Es una estimación.`;
+  return `Suele tardar ${how} ${minutesWord(wait)} para un tema de ${minutesWord(song)}. Es una estimación.`;
 }
 
 /* ---------------------------------------------------------------- result */

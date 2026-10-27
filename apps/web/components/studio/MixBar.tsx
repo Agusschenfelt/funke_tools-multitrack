@@ -23,6 +23,8 @@ interface MixBarProps {
   downloadsId: string;
   /** Deshacer, Rehacer and Guardar: rendered at the end of the row only while they matter. */
   edit?: ReactNode;
+  /** The section editor is open (its own sheet carries undo, redo and save). */
+  editorOpen?: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export function MixBar({
   onToggleDownloads,
   downloadsId,
   edit = null,
+  editorOpen = false,
 }: MixBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
@@ -169,7 +172,12 @@ export function MixBar({
           </button>
         </div>
       )}
-      {edit}
+      <div className={styles.editSlot}>
+        {edit ??
+          (editorOpen ? null : (
+            <p className={styles.editHint}>Tocá una sección de arriba para editarla.</p>
+          ))}
+      </div>
     </div>
   );
 }

@@ -88,12 +88,16 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .row[data-status="running"] .mark {
-    animation: tick 1.2s steps(1, end) infinite;
+    animation: breathe 1.6s var(--ease-out) infinite alternate;
   }
 }
 
-@keyframes tick {
-  50% {
-    opacity: 0.25;
+/* The marker never dims: it swells slightly, so it stays at full orange against the ink. */
+@keyframes breathe {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.35);
   }
 }

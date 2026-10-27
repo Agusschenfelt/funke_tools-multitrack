@@ -29,10 +29,16 @@ function Title({ view, onRename }: { view: TitleView; onRename: (title: string |
         <button
           type="button"
           className={styles.titleButton}
+          data-fallback={view.fallback ? "true" : undefined}
           title="Renombrar (el nombre queda solo en este navegador)"
+          aria-label={view.fallback ? "Renombrar el tema" : `Renombrar el tema: ${view.text}`}
           onClick={() => setDraft(view.fallback ? "" : view.text)}
         >
-          {view.text}
+          <span className={styles.titleText}>{view.text}</span>
+          <svg className={styles.pencil} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+            <path d="M2.5 13.5l.7-3L11 2.7a1.2 1.2 0 011.7 0l.6.6a1.2 1.2 0 010 1.7L5.5 12.8z" />
+            <path d="M9.6 4.1l2.3 2.3" />
+          </svg>
         </button>
         {view.detail && <span className={`${styles.duration} mono`}>{view.detail}</span>}
       </h1>
@@ -137,7 +143,13 @@ export function SongBar({
         <Link
           href={`/temas/${songId}/exportar`}
           className={styles.export}
-          title="Armar el Stage Pack: pistas, click y guías habladas para tu software de playback o DAW"
+          data-blocked={blocked ? "true" : undefined}
+          aria-disabled={blocked ? "true" : undefined}
+          title={
+            blocked === "dirty"
+              ? "Guardá primero las secciones: el pack usa las guardadas"
+              : "Armar el Stage Pack: pistas, click y guías habladas para tu software de playback o DAW"
+          }
           onClick={(event) => {
             if (!blocked) return;
             event.preventDefault();

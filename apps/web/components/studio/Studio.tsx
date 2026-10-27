@@ -458,6 +458,7 @@ function StudioStage({
           onToggleDownloads={() => setDownloadsOpen((open) => !open)}
           downloadsId={downloadsId}
           edit={editorOpen ? null : editControls(true)}
+          editorOpen={editorOpen}
         />
         {downloadsOpen && (
           <DownloadsPanel

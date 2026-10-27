@@ -69,6 +69,15 @@
   color: var(--ink);
 }
 
+/* The undo/redo/save slot: invisible wrapper on wide screens, a reserved row on a phone. */
+.editSlot {
+  display: contents;
+}
+
+.editHint {
+  display: none;
+}
+
 /* Phone-only controls; wide screens show the segmented presets and the menu content inline. */
 .mix,
 .more {
@@ -206,5 +215,23 @@
 
   .loop {
     flex-basis: 100%;
+  }
+
+  /* Reserved up front, so the first edit swaps the hint for the controls without moving the lanes. */
+  .editSlot {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    min-height: var(--touch);
+  }
+
+  .editSlot > * {
+    flex: 1 1 100%;
+  }
+
+  .editHint {
+    display: block;
+    color: var(--paper-dim);
+    font-size: var(--text-sm);
   }
 }
