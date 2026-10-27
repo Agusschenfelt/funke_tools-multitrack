@@ -104,7 +104,7 @@ export function Lane({
   return (
     <section className={styles.lane} aria-label={label}>
       <div className={styles.head}>
-        <h3 className={styles.name}>{label}</h3>
+        <h2 className={styles.name}>{label}</h2>
         <span className={`${styles.pager} mono`} aria-hidden="true">
           {index + 1} / {count}
         </span>

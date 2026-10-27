@@ -207,6 +207,10 @@ a.toggle {
   .panSlider {
     height: var(--touch);
   }
+
+  .pan {
+    min-width: 9.5rem;
+  }
 }
 
 @media (max-width: 47.99rem) {
@@ -233,12 +237,12 @@ a.toggle {
 
   .head {
     grid-template-columns: 1fr auto auto;
+    /* Two rows: name, pager and buttons; then volume and pan side by side. */
     grid-template-areas:
       "name pager buttons"
-      "volume volume volume"
-      "pan pan pan";
-    gap: var(--space-2) var(--space-3);
-    padding: var(--space-3) 0;
+      "volume volume pan";
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) 0;
   }
 
   .name {
@@ -261,5 +265,9 @@ a.toggle {
   .volume,
   .panSlider {
     height: var(--touch);
+  }
+
+  .pan {
+    min-width: 9.5rem;
   }
 }

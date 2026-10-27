@@ -316,6 +316,10 @@ function StudioStage({
   };
   const loadedCount = names.filter((name) => state.stems[name].phase === "ready").length;
   const downloaded = names.reduce((sum, name) => sum + state.stems[name].loaded, 0);
+  const sizeNote =
+    state.status === "ready" && downloaded > 0
+      ? `${compressed ? "Vista previa comprimida" : "Pistas sin comprimir"}: ${formatBytes(downloaded)} descargados. El pack exportado conserva la calidad completa.`
+      : null;
 
   return (
     <>
@@ -342,12 +346,7 @@ function StudioStage({
         {state.status === "ready" ? "Pistas listas" : ""}
       </p>
 
-      {state.status === "ready" && downloaded > 0 && (
-        <p className={styles.sizeNote}>
-          {compressed ? "Vista previa comprimida" : "Pistas sin comprimir"}: {formatBytes(downloaded)}{" "}
-          descargados. El pack exportado conserva la calidad completa.
-        </p>
-      )}
+      {sizeNote && <p className={styles.sizeNote}>{sizeNote}</p>}
 
       <div className={styles.stage}>
         <SectionToolbar
@@ -409,6 +408,7 @@ function StudioStage({
           exportOpen={exportOpen}
           onToggleExport={() => setExportOpen((open) => !open)}
           exportId={exportId}
+          note={sizeNote}
         />
         {exportOpen && (
           <MixExport

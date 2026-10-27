@@ -65,6 +65,22 @@
   color: var(--ink);
 }
 
+/* Phone-only controls; wide screens show the segmented presets and the menu content inline. */
+.mix,
+.more {
+  display: none;
+}
+
+.menu {
+  display: contents;
+}
+
+.note {
+  display: none;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
 .tools {
   display: flex;
   flex-wrap: wrap;
@@ -127,22 +143,76 @@
 
 @media (max-width: 47.99rem) {
   .bar {
+    position: relative;
     padding: var(--space-2) 0;
+  }
+
+  .presets {
+    display: none;
+  }
+
+  .mix {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .mixLabel {
+    color: var(--paper-dim);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .select {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--touch);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--graphite);
+    border-radius: var(--radius);
+    background: var(--ink-raised);
+    color: var(--paper);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .select:disabled {
+    color: var(--paper-dim);
+  }
+
+  .more {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+  }
+
+  .menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 7;
+    display: none;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--graphite);
+    border-radius: var(--radius);
+    background: var(--ink-raised);
+    box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.45);
+  }
+
+  .menu[data-open="true"] {
+    display: grid;
   }
 
   .hint {
     display: none;
   }
 
-  /* Phone: the strip scrolls sideways instead of wrapping into rows. */
-  .presets {
-    flex-wrap: nowrap;
-    width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .presets::-webkit-scrollbar {
-    display: none;
+  .note {
+    display: block;
   }
 }

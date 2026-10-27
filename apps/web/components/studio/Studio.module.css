@@ -177,6 +177,11 @@
   .mode {
     font-size: var(--text-base);
   }
+
+  /* Phone: the same note sits in the mixer's "Más" menu so the first lane stays above the fold. */
+  .sizeNote {
+    display: none;
+  }
 }
 
 .sizeNote {
