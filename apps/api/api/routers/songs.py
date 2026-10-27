@@ -115,6 +115,12 @@ def analyze(
 ) -> JobCreated:
     require_source(ctx, song)
     request = body or AnalyzeRequest()
+    kwargs: dict = {"sections": request.sections, "source_name": song.filename}
+    state = session.get(SectionsState, song.id)
+    if not (state and state.edited):
+        # Never edited by the user: the fresh detection must replace sections.json. Edited
+        # sections stay protected because the flag is simply not sent.
+        kwargs["overwrite_sections"] = True
     job_id = create_job(
         session,
         ctx,
@@ -122,7 +128,7 @@ def analyze(
         "analyze",
         queueing.ANALYZE_FUNC,
         (song.id,),
-        {"sections": request.sections, "source_name": song.filename},
+        kwargs,
         timeout=ANALYZE_TIMEOUT,
     )
     return JobCreated(job_id=job_id)
