@@ -71,3 +71,24 @@ Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durant
 - 2026-10-25: el Stage Pack recibe las secciones como entrada opcional (`sections.json`). Sin secciones, la guía solo trae la cuenta del count-in.
 - 2026-10-25: cues con Piper (`es_MX/ald` y `en_US/ljspeech`) ahora; voz rioplatense propia más adelante. Cambiarla es solo reemplazar archivos y el `manifest.json`.
 - 2026-10-25: detección de secciones con un pipeline propio sin pesos entrenados (segmentación de librosa más reglas para nombrar). Los nombres son sugerencias con nivel de confianza.
+
+## Próximos pasos (estado al 27/10/2026)
+
+Producción coincide con `main` (`cf427f6`, PR #9). Para retomar, empezar por esta lista.
+
+1. **Cambio de tono y tempo con Rubber Band.** Es lo siguiente acordado: transponer y cambiar el tempo de los stems sin alterar el otro parámetro.
+2. **Avisos menores de la revisión de UX v1** (detalle en `odd/tasks/ux-v1.md`):
+   - Si el navegador rechaza la notificación de "listo", el error no se muestra (`useWaitSignals.ts`).
+   - El resultado parcial puede quedar con un texto provisorio viejo (`ResultFill.tsx`).
+   - Dos detalles de legibilidad del código (`help.ts`, `Transport.tsx`).
+3. **Problemas P2 de la crítica de UX** (`.impeccable/critique/2026-10-27T14-51-41Z__apps-web.md`):
+   - Exportar en el celular: separar las opciones en "Básico" y "Avanzado" con valores recomendados, y evitar que la barra fija tape contenido.
+4. **Funciones pendientes:**
+   - Editor de grilla.
+   - Audio a MIDI con basic-pitch.
+   - Separar coros de la voz principal y quitar reverb, solo con modelos de licencia comercial.
+   - Destino Prime: probar con una importación real (ver la tabla de pendientes del equipo).
+5. **Detalles conocidos:**
+   - En escritorio, el editor de secciones tapa el carril de Batería.
+   - El equipo tiene que volver a subir los temas para obtener acordes y tono alternativo.
+
