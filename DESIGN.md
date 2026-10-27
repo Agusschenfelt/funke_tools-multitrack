@@ -133,7 +133,7 @@ Density is operational: lanes, section strip and a fixed transport are always on
 A restrained dark palette of one warm ink family, one cream paper family and one orange; two state colors appear only when a state carries meaning.
 
 ### Primary
-- **Funke Ballpoint Orange** (`colors.orange`): the active mark. Primary action fill (Exportar, Guardar, Subir, play), the playhead, the bracket and edge lines of the active section, the progress fill, the drag-over border, the edge grip while hovered or dragged, and the running-job tick. Text on it is `on-orange` ink. Hover and press step to `orange-hover` and `orange-press`.
+- **Funke Ballpoint Orange** (`colors.orange`): the active mark. Primary action fill (Exportar pack, Guardar, Subir, Abrir el estudio, play), the playhead, the bracket and edge lines of the active section, the progress fill, the drag-over border, the edge grip while hovered or dragged, the running-job mark, and the wait ruler's current-bar mark. Text on it is `on-orange` ink. Hover and press step to `orange-hover` and `orange-press`.
 
 ### Neutral
 - **Ink** (`colors.ink`): page ground, minimap track, and the browser theme color.
@@ -149,7 +149,7 @@ A restrained dark palette of one warm ink family, one cream paper family and one
 - **Warning Amber** (`colors.warning`): the "revisar" flag on a weakly detected section label, and the hold notice. Text-sized and small; it collapses to a dot in narrow sections.
 
 ### Named Rules
-**The Ballpoint Rule.** Orange marks only the active section, the playhead and the primary action. If something is merely selected, hovered or informational it is paper, graphite or lifted ink. The selected-for-editing section gets a paper outline; the active section gets orange.
+**The Ballpoint Rule.** Orange marks only the active section, the playhead and the primary action, and there is one primary action per moment: while section edits are unsaved, "Exportar pack" steps back to an outline so "Guardar" is the only orange. If something is merely selected, hovered or informational it is paper, graphite or lifted ink. The selected-for-editing section gets a paper outline; the active section gets orange.
 
 **The Warm Ink Rule.** Every neutral leans warm (brown-tinted ink, cream paper). No cool greys, no pure black or white.
 
@@ -163,7 +163,7 @@ A restrained dark palette of one warm ink family, one cream paper family and one
 ### Hierarchy
 - **Display** (800, `clamp(2rem, 1.2rem + 4.2vw, 3.75rem)`, 1.0, -0.01em, uppercase): the upload page title.
 - **Headline** (800, `clamp(1.5rem, 1rem + 2.5vw, 2.5rem)`, 1.1, uppercase): the export page title.
-- **Title** (800, 1.25rem, 1.2): the song title in the song bar; 700 for lane names, uppercase and 1.25rem on phone.
+- **Title** (800, 1.25rem, 1.2): the song title in the song bar (dim paper, 600 when it is the "Tema sin título" fallback); 700 for lane names, uppercase and 1.25rem on phone.
 - **Body** (400, 1rem, 1.5): prose and controls; button text 600. Lead and hint copy hold a `62ch` measure.
 - **Label** (700, 0.875rem, 0.06em, uppercase): section names in the strip. Table headers are 600, 0.75rem, 0.06em, uppercase. Small notes and status are 0.875rem in dim paper.
 - **Fact** (Courier Prime, tabular, 0 tracking): key, BPM, meter, bar numbers, section times, bars:beats readout (1.75rem 700), clock, M/S toggle letters, the "revisar" flag, file sizes. On phone the key/BPM/meter readout becomes monumental (2rem, 700, 1.05).
@@ -175,11 +175,13 @@ A restrained dark palette of one warm ink family, one cream paper family and one
 
 ## Layout
 
-A ruled page. Studio content runs to `90rem`, other pages to `64rem` (`page-width`), with a `1rem` gutter. Spacing is a 4/8/12/16/24/32/48/72px scale and the touch target is `2.75rem`. The song bar is a three-column grid (title, facts, export). Under it, the section strip and lanes share a `15rem` head column (names, mute, solo, volume) with the timeline to its right, so bar lines align across strip and lanes. Lanes are `4.5rem` minimum, separated by rule lines, with a 1px centre line like a staff. The transport is fixed to the bottom (7rem desktop, 6.25rem phone, plus safe-area inset) and the page reserves that room; a proportional section minimap sits at its top.
+A ruled page. Studio content runs to `90rem`, other pages to `64rem` (`page-width`), with a `1rem` gutter. Spacing is a 4/8/12/16/24/32/48/72px scale and the touch target is `2.75rem`. The song bar is a four-column grid (title, facts, "?" help, Exportar pack); the help panel anchors under it. Under it, the section strip and lanes share a `15rem` head column (names, mute, solo, volume) with the timeline to its right, so bar lines align across strip and lanes. Lanes are `4.5rem` minimum, separated by rule lines, with a 1px centre line like a staff. The transport is fixed to the bottom (7rem desktop, 6.25rem phone, plus safe-area inset) and the page reserves that room; a proportional section minimap sits at its top.
 
 The section editor never pushes the lanes: it opens in a zero-height anchor under the strip, as a one-row overlay on desktop and as a fixed bottom sheet above the transport on phone.
 
-**Phone (below 48rem):** song bar becomes title and Exportar over a monumental facts row; the lane head collapses to a one-lane-per-page horizontal scroll-snap feed with a "n / total" pager, uppercase lane name, 44px M/S and volume; the strip sits above, with smaller labels and no drag edges; the transport is one row (play, position, Click, Guías, language) and the total time is hidden; the editor hint folds into a "Cómo se editan" disclosure. Coarse pointers get 44px toggles and sliders.
+The studio has one toolbar row under the song bar: quick-mix presets on the left; on the right Compases/Tiempo, "Repetir esta sección" and "Descargas"; the loop state follows, and the edit controls (Deshacer, Rehacer, Guardar) join the row only while there is something to edit. The Descargas panel opens in the page flow under the row. The wait screen is a single `44rem` column: title, ruler, stage lines, one fixed-height slot, "Detalle", then the result.
+
+**Phone (below 48rem):** song bar becomes title, "?" and Exportar pack over a monumental facts row; the title wraps and the pencil follows its last word; the presets become a "Mezcla" select and the rest folds into "Más", which opens in the page flow; a reserved 44px row holds the hint "Tocá una sección de arriba para editarla" until edits swap in the controls, so nothing shifts; the help is a bottom sheet above the transport; section chips are at least 56x44 and scroll sideways over the true time axis; the lane head collapses to a one-lane-per-page horizontal scroll-snap feed with a "n / total" pager, uppercase lane name, 44px M/S and volume; the strip sits above, with smaller labels and no drag edges; the transport is one row (play, position, Click, Guías, language) and the total time is hidden; the section editor is a bottom sheet. Coarse pointers get 44px toggles and sliders.
 
 ## Elevation & Depth
 
@@ -202,6 +204,15 @@ Almost square. Everything is `2px` (`rounded.base`): buttons, fields, notices, d
 - **Secondary / ghost:** transparent, 1px graphite border (paper on hover in the upload view, lifted-ink fill elsewhere), 600, 44px tall. Used for Deshacer, Rehacer, Cerrar, section tools.
 - **Toggle:** ghost; pressed state inverts to a paper fill with ink text (Click, Guías, M, S). Pressed is paper, never orange.
 
+### Song bar
+The title is a button that looks like the heading: dotted graphite underline and a drawn pencil at rest (touch included), both going to paper on hover. Click opens a text field (80 characters); Enter or blur commits, Escape cancels, empty restores the file's name. The rename lives in this browser only. A generic file name reads "Tema sin título" in dim paper with the duration in mono beside it. Key, BPM and meter follow in mono; the "?" is a 44px outlined mono button. "Exportar pack" is the orange primary; with unsaved edits it becomes a graphite outline in dim text with `aria-disabled`, and pressing it shows the warning notice with "Guardar ahora".
+
+### Help
+"Cómo funciona el estudio" is a non-modal raised-ink panel (30rem, graphite border, the sheet shadow) opened by "?" or the `?` key, and closed by Escape, Cerrar, "?" or a press outside; focus returns to the button. Sections: Cada zona, Atajos (keys as mono `kbd` boxes), Gestos, Qué significan las marcas (the legend), Mezclas rápidas. Terms in 600, descriptions in dim paper. Its copy comes from one source (`lib/studio/help`).
+
+### Toolbar and downloads
+Segmented group: one graphite-bordered strip, the pressed segment inverts to paper with ink text, "Personalizado" appears (not a button) only when mute/solo no longer match a preset. Small buttons are 2.25rem (44px on coarse pointers), 600, outlined; an open panel's trigger is lifted ink. "Descargas" opens a panel with "Cada pista (WAV sin comprimir)" as outlined download links with a square-cap arrow, "Bajar esta mezcla (WAV)" with its options, and a quiet dim note when the studio loaded a compressed preview (the exported pack keeps full quality). Downloads are secondary; the pack stays in the song bar.
+
 ### Fields
 Raised ink fill, 1px graphite border, 2px corners, 44px tall (3.25rem on phone), paper text. Language and section selects share the style. Focus is the global 2px paper outline at 3px offset.
 
@@ -217,6 +228,13 @@ Raised ink, rule on top. Play (orange), position as bars:beats in mono 1.75rem 7
 ### Upload drop zone and bar progress
 Raised ink panel with a rule border; drag-over switches border to orange and the fill to lifted ink. Progress is drawn as a 12-bar staff with numbered bars in dim mono and a 4px orange fill; the staff draws in left to right on mount.
 
+### Wait screen
+- **Ruler:** the same 12-bar staff reused as the clock (`role=progressbar`, steps done of total). Bars behind the mark turn paper-dim with a 2px floor line; the current bar carries a 4px orange floor mark and a paper bold number, and advances only when a stage completes. While work is live the mark breathes in thickness (scaleY 1 to 1.75, 1.6s), never in opacity, and only under `prefers-reduced-motion: no-preference`. When all is done the right edge closes with a 3px paper double bar.
+- **Stage lines:** one row per job (min 4.25rem): square mark (hollow graphite, orange running, paper finished, error failed), uppercase task label, a 700 line of what is happening now, and mono "k/n" steps over elapsed time at the right. Queued lines are dim and regular.
+- **Slot:** one fixed-height region holds the duration estimate note, then either the hint, the secondary "Avisarme con una notificación" opt-in, the granted hint, or the orange "Abrir el estudio", which takes focus and fades in only if the person watched the wait. The tab title tracks progress and is restored on leave; a browser notification fires once, only when the tab is hidden.
+- **Detalle:** a native disclosure in dim uppercase 0.75rem with a drawn chevron that turns when open, holding the job table.
+- **Result fill:** laid out from the start with fixed-height dashes (key, tempo, meter, duration in 4rem mono readouts) so nothing moves; values arrive in place, section chips (graphite outline, 700, `×n` in mono) stamp in one by one at 70ms steps, followed by "Acordes más presentes" in mono joined by middots. Failures stay in error-bordered notices with a retry button.
+
 ### Job table
 Fixed-column table (task, status, time), hairline row rules, uppercase 0.75rem headers, times right-aligned in mono. Each row has a square 0.5rem mark: hollow graphite when waiting, orange and blinking in steps when running, paper when finished, error when failed (the row text turns error). Updates in place.
 
@@ -224,7 +242,7 @@ Fixed-column table (task, status, time), hairline row rules, uppercase 0.75rem h
 Bordered 1px in error or warning color with the same text color, 2px corners, copy at a `62ch` measure and an action button on the right.
 
 ### Motion
-Tokens: `--ease-out: cubic-bezier(0.16, 1, 0.3, 1)`; `--duration-fast: 140ms` for color, background, border and opacity changes; `--duration-draw: 700ms` for the staff drawing in. The running-job tick is a 1.2s stepped blink. Under `prefers-reduced-motion: reduce` all animation and transition durations collapse to 0.01ms. Do not animate layout.
+Tokens: `--ease-out: cubic-bezier(0.16, 1, 0.3, 1)`; `--duration-fast: 140ms` for color, background, border and opacity changes; `--duration-draw: 700ms` for the staff drawing in. The running-job tick is a 1.2s stepped blink; the wait ruler mark and stage-line mark breathe over 1.6s (thickness or scale, never opacity); result values arrive in 420ms. Under `prefers-reduced-motion: reduce` all animation and transition durations collapse to 0.01ms. Do not animate layout.
 
 ## Do's and Don'ts
 
@@ -236,6 +254,8 @@ Tokens: `--ease-out: cubic-bezier(0.16, 1, 0.3, 1)`; `--duration-fast: 140ms` fo
 - **Do** use `paper-dim` for secondary text; keep `graphite` for borders, tracks and bar lines.
 - **Do** keep the transport fixed and the lanes unmoved when overlays open.
 - **Do** write copy in Spanish with voseo.
+- **Do** keep one orange action at a time: demote Exportar pack to an outline while Guardar is live.
+- **Do** reserve space for states that appear later (edit row, result values, wait slot) so nothing shifts.
 
 ### Don't:
 - **Don't** use orange for selection, hover, pressed toggles, links or decoration.
