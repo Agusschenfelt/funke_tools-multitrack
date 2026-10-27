@@ -6,7 +6,6 @@ import {
   chordsAround,
   keyLabel,
   nextChordIndex,
-  solfegeName,
   type Chord,
 } from "./chords";
 
@@ -53,12 +52,12 @@ describe("keyLabel", () => {
   });
   it("adds the alternative and the tooltip when it is doubtful", () => {
     const label = keyLabel({ key: "A", mode: "major", alternative: { key: "E", mode: "major" } });
-    expect(label.alternative).toBe("Mi mayor");
+    expect(label.alternative).toBe("E mayor");
     expect(label.tooltip).toBe(AMBIGUOUS_KEY_TIP);
   });
-  it("names minor alternatives and sharps in Spanish", () => {
+  it("names minor alternatives and sharps with letter names", () => {
     const label = keyLabel({ key: "E", mode: "major", alternative: { key: "C#", mode: "minor" } });
-    expect(label.alternative).toBe("Do# menor");
+    expect(label.alternative).toBe("C# menor");
   });
   it("ignores an unknown alternative", () => {
     expect(
@@ -67,10 +66,6 @@ describe("keyLabel", () => {
   });
 });
 
-it("solfegeName", () => {
-  expect(solfegeName("G#")).toBe("Sol#");
-  expect(solfegeName("?")).toBe("?");
-});
 
 describe("chipFitsLabel", () => {
   it("fits short labels sooner than long ones", () => {

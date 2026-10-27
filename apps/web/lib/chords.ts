@@ -55,22 +55,6 @@ export function chordsAround(
   return { current: chordIndexAt(chords, time), next: nextChordIndex(chords, time) };
 }
 
-const SOLFEGE: Record<string, string> = {
-  C: "Do",
-  D: "Re",
-  E: "Mi",
-  F: "Fa",
-  G: "Sol",
-  A: "La",
-  B: "Si",
-};
-
-/** "E" -> "Mi", "C#" -> "Do#". Anything unknown is returned as it came. */
-export function solfegeName(note: string): string {
-  const base = SOLFEGE[note.charAt(0)];
-  return base ? base + note.slice(1) : note;
-}
-
 function modeWord(mode: string): string {
   const m = mode.toLowerCase();
   if (m === "major") return "mayor";
@@ -82,20 +66,20 @@ export interface KeyLabel {
   /** Letter name as in the chord sheet: "A". */
   note: string;
   mode: string;
-  /** "Mi mayor" when the key is doubtful; null otherwise. */
+  /** "E mayor" when the key is doubtful; null otherwise (letter names, like the primary key). */
   alternative: string | null;
   /** Tooltip for a doubtful key. */
   tooltip: string | null;
 }
 
-/** What the song bar shows for a key: "A mayor" and, when doubtful, "(o Mi mayor)". */
+/** What the song bar shows for a key: "A mayor" and, when doubtful, "(o E mayor)". */
 export function keyLabel(key: KeyShape): KeyLabel {
   const alt = key.alternative;
   const doubtful = Boolean(alt && alt.key && alt.key !== "unknown");
   return {
     note: key.key,
     mode: modeWord(key.mode),
-    alternative: alt && doubtful ? `${solfegeName(alt.key)} ${modeWord(alt.mode)}` : null,
+    alternative: alt && doubtful ? `${alt.key} ${modeWord(alt.mode)}` : null,
     tooltip: doubtful ? AMBIGUOUS_KEY_TIP : null,
   };
 }
