@@ -1,0 +1,131 @@
+.panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  width: min(30rem, 100%);
+  max-height: min(34rem, calc(100dvh - 12rem));
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: var(--ink-raised);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.45);
+}
+
+.panel:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: -2px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.close {
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--ink-lifted);
+}
+
+.heading {
+  margin-top: var(--space-4);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--rule);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+}
+
+.list dt {
+  font-weight: 600;
+}
+
+.list dd {
+  margin: 0;
+  color: var(--paper-dim);
+}
+
+.joiner {
+  margin: 0 var(--space-1);
+  color: var(--paper-dim);
+}
+
+.key {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  line-height: 1.375rem;
+  text-align: center;
+}
+
+.plain {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+  list-style: none;
+}
+
+@media (pointer: coarse) {
+  .close {
+    min-height: var(--touch);
+  }
+}
+
+/* Phone: a sheet above the transport, with its own scroll. */
+@media (max-width: 47.99rem) {
+  .panel {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: calc(var(--transport-h) + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    width: auto;
+    max-height: calc(100dvh - var(--transport-h) - env(safe-area-inset-bottom, 0px) - 5rem);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
+    padding: var(--space-3) var(--gutter);
+  }
+
+  .list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .list dd {
+    margin-bottom: var(--space-2);
+  }
+}

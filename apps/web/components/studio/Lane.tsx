@@ -23,10 +23,6 @@ interface LaneProps {
   duration: number;
   activeSpan: StripSpan | null;
   loop: LoopRange | null;
-  /** Signed link to the full-quality WAV of this stem; absent when the song has none. */
-  downloadUrl?: string;
-  /** File name offered by the browser. */
-  downloadName?: string;
   index: number;
   count: number;
 }
@@ -60,7 +56,7 @@ function PanControl({ engine, name, label, pan }: { engine: StudioEngine; name: 
   };
   return (
     <div className={styles.pan}>
-      <span className={`${styles.panEnd} mono`} aria-hidden="true">
+      <span className={`${styles.panEnd} mono`} aria-hidden="true" title="Izquierda">
         L
       </span>
       <input
@@ -73,12 +69,12 @@ function PanControl({ engine, name, label, pan }: { engine: StudioEngine; name: 
         aria-label={`Paneo de ${label}`}
         aria-valuetext={panText(pan)}
         aria-keyshortcuts="Enter"
-        title="Doble clic o Enter para centrar"
+        title="Paneo, de izquierda (L) a derecha (R). Doble clic o Enter para centrar"
         onChange={(event) => engine.setPan(name, Number(event.target.value))}
         onDoubleClick={centre}
         onKeyDown={onKeyDown}
       />
-      <span className={`${styles.panEnd} mono`} aria-hidden="true">
+      <span className={`${styles.panEnd} mono`} aria-hidden="true" title="Derecha">
         R
       </span>
     </div>
@@ -94,8 +90,6 @@ export function Lane({
   duration,
   activeSpan,
   loop,
-  downloadUrl,
-  downloadName,
   index,
   count,
 }: LaneProps) {
@@ -114,6 +108,7 @@ export function Lane({
             className={styles.toggle}
             aria-pressed={mix.muted}
             aria-label={`Silenciar ${label}`}
+            title="M: silenciar esta pista"
             onClick={() => engine.toggleMute(name)}
           >
             M
@@ -123,29 +118,11 @@ export function Lane({
             className={styles.toggle}
             aria-pressed={mix.solo}
             aria-label={`Solo ${label}`}
+            title="S: escuchar solo esta pista"
             onClick={() => engine.toggleSolo(name)}
           >
             S
           </button>
-          {downloadUrl && (
-            <a
-              className={styles.toggle}
-              href={downloadUrl}
-              download={downloadName}
-              aria-label={`Descargar ${label} (WAV)`}
-              title={`Descargar ${label} (WAV)`}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                <path
-                  d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19h14"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="square"
-                />
-              </svg>
-            </a>
-          )}
         </div>
         <input
           type="range"

@@ -19,16 +19,19 @@ import { stemGains } from "@/lib/audio/mix";
 import { loadPans, savePans } from "@/lib/audio/panStore";
 import { detectPreset } from "@/lib/audio/presets";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
-import { orderStems, STEM_LABEL, studioSources } from "@/lib/audio/stems";
+import { orderStems, studioSources } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
 import { chordsAround, type Chord } from "@/lib/chords";
-import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
+import { buildStrip, flatIndex, locateActive } from "@/lib/strip";
+import { editControlsVisible } from "@/lib/studio/toolbar";
+import { isHelpKey, LEGEND } from "@/lib/studio/help";
+import { loadTitle, saveTitle, titleView } from "@/lib/studio/title";
 import { useEngineState, useFrame } from "./hooks";
 import { ChordLane } from "./ChordLane";
 import { Lane } from "./Lane";
 import { MixBar } from "./MixBar";
-import { MixExport } from "./MixExport";
-import { SectionEditor, SectionToolbar } from "./SectionPanel";
+import { DownloadsPanel } from "./DownloadsPanel";
+import { EditControls, SectionEditor } from "./SectionPanel";
 import { SectionStrip } from "./SectionStrip";
 import { SongBar } from "./SongBar";
 import { Transport } from "./Transport";
@@ -212,6 +215,7 @@ function StudioStage({
   onReload,
 }: BodyProps & { engine: StudioEngine; compressed: boolean }) {
   const state = useEngineState(engine);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const grid = analysis.grid;
   const hasGrid = Boolean(grid && grid.downbeats.length > 0);
@@ -275,6 +279,12 @@ function StudioStage({
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
+      // ? opens or closes the help from anywhere except a text field.
+      if (isHelpKey(event)) {
+        if (target?.closest("input, textarea, select, [contenteditable]")) return;
+        setHelpOpen((open) => !open);
+        return;
+      }
       // L clears the loop from anywhere except a text field.
       if (event.key === "l" || event.key === "L") {
         if (target?.closest("input, textarea, select, [contenteditable]")) return;
@@ -292,11 +302,18 @@ function StudioStage({
 
   const gains = stemGains(state.mix);
   const [ruler, setRuler] = useState<"bars" | "time">(hasGrid ? "bars" : "time");
-  const [exportOpen, setExportOpen] = useState(false);
-  const exportId = useId();
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const downloadsId = useId();
+  const toggleHelp = useCallback(() => setHelpOpen((open) => !open), []);
   const wavs = useMemo(() => orderStems(song.artifacts.stems), [song]);
-  const wavUrl = useMemo(() => new Map(wavs.map((s) => [s.name, s.url])), [wavs]);
-  const title = titleFromFilename(song.filename);
+  // The rename lives in this browser only; the stage only mounts on the client, so reading is safe.
+  const [customTitle, setCustomTitle] = useState<string | null>(() => loadTitle(songId));
+  const titleInfo = titleView(song.filename, duration, customTitle);
+  const title = titleInfo.text;
+  const rename = (next: string | null) => {
+    setCustomTitle(next);
+    saveTitle(songId, next);
+  };
   const silent = names.every((name) => gains[name] === 0);
   const preset = detectPreset(state.mix, state.order);
 
@@ -317,6 +334,30 @@ function StudioStage({
   const activeGroup = active ? active.group : null;
   const activeSpan = active ? groups[active.group]?.spans[active.span] ?? null : null;
   const activeIndex = flatIndex(groups, active);
+
+  const editorOpen = editor.selected !== null;
+  const showEdit = editControlsVisible({
+    dirty: editor.dirty,
+    saving: editor.saving,
+    canUndo: editor.canUndo,
+    canRedo: editor.canRedo,
+    editorOpen,
+    status: editor.status,
+  });
+  const editControls = (dense: boolean) =>
+    showEdit ? (
+      <EditControls
+        dense={dense}
+        dirty={editor.dirty}
+        saving={editor.saving}
+        status={editor.status}
+        canUndo={editor.canUndo}
+        canRedo={editor.canRedo}
+        onUndo={editor.undo}
+        onRedo={editor.redo}
+        onSave={editor.save}
+      />
+    ) : null;
 
   const select = (index: number) => {
     editor.select(index);
@@ -341,11 +382,14 @@ function StudioStage({
     <>
       <SongBar
         songId={songId}
-        title={title}
+        title={titleInfo}
         analysis={analysis}
         dirty={editor.dirty}
         saving={editor.saving}
         onSave={editor.save}
+        onRename={rename}
+        helpOpen={helpOpen}
+        onToggleHelp={toggleHelp}
       />
 
       {state.status === "error" && (
@@ -362,20 +406,7 @@ function StudioStage({
         {state.status === "ready" ? "Pistas listas" : ""}
       </p>
 
-      {sizeNote && <p className={styles.sizeNote}>{sizeNote}</p>}
-
       <div className={styles.stage}>
-        <SectionToolbar
-          sectionCount={sections.length}
-          dirty={editor.dirty}
-          saving={editor.saving}
-          status={editor.status}
-          canUndo={editor.canUndo}
-          canRedo={editor.canRedo}
-          onUndo={editor.undo}
-          onRedo={editor.redo}
-          onSave={editor.save}
-        />
         <SectionStrip
           engine={engine}
           sections={sections}
@@ -395,6 +426,7 @@ function StudioStage({
         <div className={styles.slot}>
           {editor.selected !== null && (
             <SectionEditor
+              edit={editControls(false)}
               sections={sections}
               selected={editor.selected}
               downbeats={downbeats}
@@ -407,6 +439,7 @@ function StudioStage({
             />
           )}
         </div>
+        {sections.length === 0 && <p className={styles.quiet}>Esta canción no tiene secciones.</p>}
         <MixBar
           preset={preset}
           disabled={state.status !== "ready"}
@@ -421,14 +454,14 @@ function StudioStage({
           onClearLoop={() => engine.clearLoop()}
           ruler={ruler}
           onRuler={setRuler}
-          exportOpen={exportOpen}
-          onToggleExport={() => setExportOpen((open) => !open)}
-          exportId={exportId}
-          note={sizeNote}
+          downloadsOpen={downloadsOpen}
+          onToggleDownloads={() => setDownloadsOpen((open) => !open)}
+          downloadsId={downloadsId}
+          edit={editorOpen ? null : editControls(true)}
         />
-        {exportOpen && (
-          <MixExport
-            id={exportId}
+        {downloadsOpen && (
+          <DownloadsPanel
+            id={downloadsId}
             engine={engine}
             title={title}
             duration={duration}
@@ -437,6 +470,7 @@ function StudioStage({
             hasGrid={hasGrid}
             silent={silent}
             ready={state.status === "ready"}
+            note={sizeNote}
           />
         )}
         <div className={lanes.lanes}>
@@ -451,14 +485,15 @@ function StudioStage({
               duration={duration}
               activeSpan={activeSpan}
               loop={state.loop}
-              downloadUrl={wavUrl.get(name)}
-              downloadName={`${title} - ${STEM_LABEL[name]}.wav`}
               index={index}
               count={names.length}
             />
           ))}
         </div>
         <ChordLane engine={engine} chords={chords} duration={duration} current={around.current} />
+        <p className={styles.quiet}>
+          {LEGEND.slice(0, 3).map((item) => `${item.mark} ${item.short}`).join(" · ")}
+        </p>
       </div>
 
       <Transport

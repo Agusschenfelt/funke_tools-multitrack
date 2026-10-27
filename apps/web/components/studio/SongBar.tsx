@@ -1,11 +1,69 @@
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Analysis } from "@/lib/api";
 import { exportBlockedBy } from "@/lib/export/flow";
 import { keyLabel } from "@/lib/chords";
+import { PACK_LABEL } from "@/lib/studio/downloads";
+import { HELP_TITLE } from "@/lib/studio/help";
+import { sanitizeTitle, UNTITLED, type TitleView } from "@/lib/studio/title";
+import { HelpPanel } from "./HelpPanel";
 import styles from "./Studio.module.css";
 
-/** Title, key and tempo in chord-sheet mono, and the way out to the export. */
+/**
+ * The song's name. A generic file name ("Untitled") reads "Tema sin título" plus the duration;
+ * clicking the name renames it for this browser only. Enter or leaving the field commits, Escape
+ * cancels, an empty name goes back to the file's.
+ */
+function Title({ view, onRename }: { view: TitleView; onRename: (title: string | null) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const editing = draft !== null;
+
+  useEffect(() => {
+    if (editing) input.current?.select();
+  }, [editing]);
+
+  if (draft === null) {
+    return (
+      <h1 className={styles.title}>
+        <button
+          type="button"
+          className={styles.titleButton}
+          title="Renombrar (el nombre queda solo en este navegador)"
+          onClick={() => setDraft(view.fallback ? "" : view.text)}
+        >
+          {view.text}
+        </button>
+        {view.detail && <span className={`${styles.duration} mono`}>{view.detail}</span>}
+      </h1>
+    );
+  }
+  const commit = () => {
+    onRename(sanitizeTitle(draft));
+    setDraft(null);
+  };
+  return (
+    <h1 className={styles.title}>
+      <input
+        ref={input}
+        className={styles.titleInput}
+        type="text"
+        value={draft}
+        maxLength={80}
+        placeholder={UNTITLED}
+        aria-label="Nombre del tema (solo en este navegador)"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+          if (event.key === "Escape") setDraft(null);
+        }}
+      />
+    </h1>
+  );
+}
+
+/** Title, key and tempo in chord-sheet mono, the help, and the way out to the Stage Pack export. */
 export function SongBar({
   songId,
   title,
@@ -13,16 +71,24 @@ export function SongBar({
   dirty,
   saving,
   onSave,
+  onRename,
+  helpOpen,
+  onToggleHelp,
 }: {
   songId: string;
-  title: string;
+  title: TitleView;
   analysis: Analysis;
   /** Unsaved section edits: the export would not include them, so the link holds until saved. */
   dirty: boolean;
   saving: boolean;
   onSave: () => void;
+  onRename: (title: string | null) => void;
+  helpOpen: boolean;
+  onToggleHelp: () => void;
 }) {
   const [tried, setTried] = useState(false);
+  const helpId = useId();
+  const helpButton = useRef<HTMLButtonElement>(null);
   const blocked = exportBlockedBy({ dirty, saving });
   const bpm = analysis.grid
     ? analysis.grid.bpm.toLocaleString("es-AR", { maximumFractionDigits: 1 })
@@ -31,7 +97,7 @@ export function SongBar({
   return (
     <>
       <header className={styles.songBar}>
-        <h1 className={styles.title}>{title}</h1>
+        <Title view={title} onRename={onRename} />
         <p className={styles.facts}>
           {key && (
             <span className={styles.fact} title={key.tooltip ?? undefined}>
@@ -50,20 +116,37 @@ export function SongBar({
             </span>
           )}
           {analysis.grid && (
-            <span className={`${styles.fact} ${styles.meter} mono`}>{analysis.grid.time_signature}</span>
+            <span className={`${styles.fact} ${styles.meter} mono`} title="Compás">
+              {analysis.grid.time_signature}
+            </span>
           )}
         </p>
+        <button
+          ref={helpButton}
+          type="button"
+          className={styles.help}
+          aria-expanded={helpOpen}
+          aria-controls={helpOpen ? helpId : undefined}
+          aria-keyshortcuts="?"
+          aria-label={HELP_TITLE}
+          title={`${HELP_TITLE} (?)`}
+          onClick={onToggleHelp}
+        >
+          ?
+        </button>
         <Link
           href={`/temas/${songId}/exportar`}
           className={styles.export}
+          title="Armar el Stage Pack: pistas, click y guías habladas para tu software de playback o DAW"
           onClick={(event) => {
             if (!blocked) return;
             event.preventDefault();
             setTried(true);
           }}
         >
-          Exportar
+          {PACK_LABEL}
         </Link>
+        {helpOpen && <HelpPanel id={helpId} onClose={onToggleHelp} triggerRef={helpButton} />}
       </header>
       <div role="status" aria-live="polite">
         {tried && blocked && (

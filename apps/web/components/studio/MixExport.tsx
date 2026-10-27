@@ -5,6 +5,7 @@ import { MixExportError, type StudioEngine } from "@/lib/audio/engine";
 import { wavSize, mixFilename, type BitDepth } from "@/lib/audio/mixdown";
 import type { StemSource } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
+import { MIX_DOWNLOAD_LABEL } from "@/lib/studio/downloads";
 import styles from "./MixExport.module.css";
 
 interface MixExportProps {
@@ -67,7 +68,7 @@ function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** Renders what the lanes sound like now into a WAV, in the browser, with progress. */
+/** Renders what the lanes sound like now into a WAV, in the browser, with progress. Lives in the downloads panel. */
 export function MixExport({
   id,
   engine,
@@ -123,7 +124,7 @@ export function MixExport({
   };
 
   return (
-    <section id={id} className={styles.panel} aria-label="Exportar mi mezcla">
+    <div id={id} className={styles.panel} role="group" aria-label={MIX_DOWNLOAD_LABEL}>
       <p className={styles.lead}>
         Descarga la mezcla tal como la escuchás ahora: volúmenes, silencios, solos y paneos. El loop no
         cuenta, sale la canción entera.
@@ -214,6 +215,6 @@ export function MixExport({
         )}
         {run.status === "error" && <span className={styles.error}>{run.message}</span>}
       </div>
-    </section>
+    </div>
   );
 }

@@ -55,9 +55,9 @@ export function Transport({
   const apply = useCallback(
     (position: number) => {
       if (barRef.current) {
-        const text = hasGrid
-          ? formatBarBeat(barPosition(position, beats, downbeats, perBar))
-          : "—";
+        // Before the first beat there is nothing to count: show nothing, not a bare dash.
+        const raw = hasGrid ? formatBarBeat(barPosition(position, beats, downbeats, perBar)) : "";
+        const text = raw === "\u2014" ? "" : raw;
         barRef.current.textContent = text;
         // The word "Cuenta" is set smaller than the bar:beat numerals so it fits the same slot.
         if (text === COUNT_IN_LABEL) barRef.current.dataset.word = "";
@@ -93,9 +93,13 @@ export function Transport({
 
         <p className={styles.readout}>
           <span className="visually-hidden">Compás y tiempo: </span>
-          <span ref={barRef} className={`${styles.bars} mono`}>
-            —
-          </span>
+          {hasGrid && (
+            <span
+              ref={barRef}
+              className={`${styles.bars} mono`}
+              title="Compás y tiempo (12:3 es el tercer tiempo del compás 12). Cuenta: la entrada antes del compás 1"
+            />
+          )}
           <span className={styles.sub}>
             <span className={`${styles.clock} mono`}>
               <span ref={clockRef}>0:00</span>

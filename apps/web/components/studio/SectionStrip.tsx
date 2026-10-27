@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { Section } from "@/lib/api";
 import type { StudioEngine } from "@/lib/audio/engine";
 import type { LoopRange } from "@/lib/audio/loop";
@@ -16,6 +16,7 @@ import styles from "./SectionStrip.module.css";
 
 const ESTIMATED_ID = "estimated-grid-legend";
 export const ESTIMATED_GRID_LEGEND = "Grilla estimada (intro sin pulso claro)";
+export const REVIEW_LEGEND = "Sección con poca confianza: revisala y corregí el nombre si hace falta";
 
 interface SectionStripProps {
   engine: StudioEngine;
@@ -90,6 +91,19 @@ export function SectionStrip({
   const pct = (seconds: number) => `${(seconds / duration) * 100}%`;
   const canMove = downbeats.length > 0;
 
+  // On a phone the sections are a row of chips that scrolls sideways; keep the playing one in view.
+  const chipsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = chipsRef.current;
+    if (activeIndex === null || !row || row.scrollWidth <= row.clientWidth) return;
+    const chip = row.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`);
+    if (!chip) return;
+    const left = chip.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft || left + chip.offsetWidth > row.scrollLeft + row.clientWidth) {
+      row.scrollLeft = left - (row.clientWidth - chip.offsetWidth) / 2;
+    }
+  }, [activeIndex]);
+
   const timeAt = (event: PointerEvent<HTMLElement>): number | null => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return null;
@@ -119,53 +133,60 @@ export function SectionStrip({
           if (event.target === event.currentTarget) seekFromClick(event, engine, duration);
         }}
       >
-        {duration > 0 &&
-          items.map((item) => {
-            const section = shown[item.index];
-            const repeated = item.count > 1;
-            const review = section ? needsReview(section, editedOnServer) : false;
-            const classes = [styles.section];
-            if (item.index === activeIndex) classes.push(styles.active);
-            if (item.index === selected) classes.push(styles.selected);
-            return (
-              <button
-                key={item.index}
-                type="button"
-                className={classes.join(" ")}
-                style={{ left: pct(item.start), width: pct(item.end - item.start) }}
-                aria-pressed={item.index === selected}
-                aria-current={item.index === activeIndex ? "true" : undefined}
-                aria-label={`${item.label}${repeated ? `, se repite ${item.count} veces` : ""}${review ? ", conviene revisar" : ""}. Enter para escuchar`}
-                onClick={() => onSelect(item.index)}
-                onDoubleClick={() => onPlay(item.index)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    onPlay(item.index);
-                  }
-                }}
-              >
-                {repeated && item.first && (
-                  <span className={`${styles.sign} mono`} aria-hidden="true">
-                    ||:
-                  </span>
-                )}
-                <span className={styles.label}>{item.label}</span>
-                {review && <span className={`${styles.review} mono`}>revisar</span>}
-                {repeated && item.last && (
-                  <>
+        <div ref={chipsRef} className={styles.chips}>
+          {duration > 0 &&
+            items.map((item) => {
+              const section = shown[item.index];
+              const repeated = item.count > 1;
+              const review = section ? needsReview(section, editedOnServer) : false;
+              const classes = [styles.section];
+              if (item.index === activeIndex) classes.push(styles.active);
+              if (item.index === selected) classes.push(styles.selected);
+              return (
+                <button
+                  key={item.index}
+                  type="button"
+                  className={classes.join(" ")}
+                  data-index={item.index}
+                  style={{ "--left": pct(item.start), "--span": pct(item.end - item.start) } as CSSProperties}
+                  aria-pressed={item.index === selected}
+                  aria-current={item.index === activeIndex ? "true" : undefined}
+                  aria-label={`${item.label}${repeated ? `, se repite ${item.count} veces` : ""}${review ? ", conviene revisar" : ""}. Enter para escuchar`}
+                  onClick={() => onSelect(item.index)}
+                  onDoubleClick={() => onPlay(item.index)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      onPlay(item.index);
+                    }
+                  }}
+                >
+                  {repeated && item.first && (
                     <span className={`${styles.sign} mono`} aria-hidden="true">
-                      :||
+                      ||:
                     </span>
-                    <span className={`${styles.times} mono`} aria-hidden="true">
-                      ×{item.count}
+                  )}
+                  <span className={styles.label}>{item.label}</span>
+                  {review && (
+                    <span className={`${styles.review} mono`} title={REVIEW_LEGEND}>
+                      revisar
                     </span>
-                  </>
-                )}
-                {repeated && !item.first && <i className={styles.repeatLine} aria-hidden="true" />}
-              </button>
-            );
+                  )}
+                  {repeated && item.last && (
+                    <>
+                      <span className={`${styles.sign} mono`} aria-hidden="true">
+                        :||
+                      </span>
+                      <span className={`${styles.times} mono`} aria-hidden="true">
+                        ×{item.count}
+                      </span>
+                    </>
+                  )}
+                  {repeated && !item.first && <i className={styles.repeatLine} aria-hidden="true" />}
+                </button>
+              );
           })}
+        </div>
         {duration > 0 &&
           canMove &&
           items.slice(1).map((item) => {
@@ -220,11 +241,13 @@ export function SectionStrip({
             {ESTIMATED_GRID_LEGEND}
           </span>
         ) : null}
-        <LoopBand
-          range={loopSelect.preview ?? loop}
-          duration={duration}
-          preview={loopSelect.preview !== null}
-        />
+        <div className={styles.overlay}>
+          <LoopBand
+            range={loopSelect.preview ?? loop}
+            duration={duration}
+            preview={loopSelect.preview !== null}
+          />
+        </div>
         <div
           className={styles.bars}
           aria-hidden="true"
@@ -264,7 +287,9 @@ export function SectionStrip({
               </span>
             ))}
         </div>
-        <Playhead engine={engine} duration={duration} />
+        <div className={styles.overlay}>
+          <Playhead engine={engine} duration={duration} />
+        </div>
       </div>
     </div>
   );
