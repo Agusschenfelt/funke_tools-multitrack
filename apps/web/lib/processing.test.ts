@@ -62,6 +62,9 @@ describe("status and stage mapping", () => {
   it("maps failures to plain Spanish", () => {
     expect(failureMessage("separate", "torch.OutOfMemoryError: out of memory")).toMatch(/memoria/);
     expect(failureMessage("analyze", "ffmpeg: Invalid data found")).toMatch(/leer el audio/);
+    expect(
+      failureMessage("analyze", "worker_cpu.jobs.JobError: El tema dura 23:41 y el máximo es 10:00."),
+    ).toBe("El tema dura 23:41 y el máximo es 10:00.");
     expect(failureMessage("analyze", null)).toBe("El análisis falló.");
     expect(failureMessage("separate", "boom")).toBe("La separación falló.");
   });

@@ -21,14 +21,17 @@ and only that, to recover the outcome of a job RQ has forgotten.
 
 import functools
 import json
+import logging
 import tempfile
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from audio_core.analysis import AnalyzeOptions
 from audio_core.analysis import analyze as run_analyze
-from audio_core.io import decode
+from audio_core.constants import MAX_DURATION_SECONDS, MAX_DURATION_TOLERANCE_SECONDS
+from audio_core.io import decode, duration_seconds, probe_duration
 from audio_core.models import Analysis, Sections, StagePackOptions, StemSet
 from audio_core.sections import detect_sections, sections_model_version
 from audio_core.separation import DEFAULT_MODEL
@@ -39,7 +42,6 @@ from rq import get_current_job
 from worker_cpu.config import cues_dir, get_storage
 from worker_cpu.storage import (
     ANALYSIS,
-    PACKS_PREFIX,
     SECTIONS,
     SECTIONS_DETECTED,
     SOURCE_PREFIX,
@@ -48,8 +50,11 @@ from worker_cpu.storage import (
     Storage,
     StorageError,
     lock_name,
+    pack_object_name,
     result_marker_name,
 )
+
+log = logging.getLogger(__name__)
 
 
 class JobError(RuntimeError):
@@ -106,11 +111,31 @@ def _source_name(storage: Storage, song_id: str) -> str:
     return names[0]
 
 
+def _mmss(seconds: float) -> str:
+    total = int(seconds)
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _check_duration(seconds: float) -> None:
+    """Reject a song longer than the product maximum with a user-facing Spanish message."""
+    if seconds > MAX_DURATION_SECONDS + MAX_DURATION_TOLERANCE_SECONDS:
+        raise JobError(
+            f"El tema dura {_mmss(seconds)} y el máximo es {_mmss(MAX_DURATION_SECONDS)}."
+        )
+
+
 def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, str]:
     name = _source_name(storage, song_id)
     local = workdir / name
     storage.get_file(song_id, name, local)
-    return decode(local), name
+    # Cheap container check first, so an over-long file is never decoded into memory.
+    probed = probe_duration(local)
+    if probed is not None:
+        _check_duration(probed)
+    audio = decode(local)
+    # ffprobe failed or lied (missing or wrong container duration): the decoded length decides.
+    _check_duration(duration_seconds(audio))
+    return audio, name
 
 
 @tracked
@@ -207,7 +232,10 @@ def _fetch_stems(storage: Storage, song_id: str, stems_dir: Path) -> StemSet:
 
 @tracked
 def stagepack_job(song_id: str, options: dict[str, Any]) -> str:
-    """Build a Stage Pack from stored stems, analysis and sections; returns the ZIP name."""
+    """Build a Stage Pack from stored stems, analysis and sections; returns the readable ZIP name.
+
+    The ZIP is stored as ``packs/<job_id>/<zip name>``; the API derives that path from the job id.
+    """
     try:
         pack_options = StagePackOptions(**options)
     except ValueError as exc:
@@ -235,6 +263,13 @@ def stagepack_job(song_id: str, options: dict[str, Any]) -> str:
         )
         set_stage("saving")
         pack_name = result.zip_path.name
-        storage.put_file(song_id, f"{PACKS_PREFIX}{pack_name}", result.zip_path)
+        # One directory per job: a second pack of the song never overwrites this one. Outside an
+        # RQ job (direct calls, no API row, no result marker) the directory is `direct-<random>`:
+        # still never overwriting anything, and recognisable as an orphan nothing tracks.
+        job_id = getattr(get_current_job(), "id", None)
+        if not job_id:
+            job_id = f"direct-{uuid.uuid4().hex}"
+            log.warning("stagepack_job ran outside an RQ job; the pack is stored under %s", job_id)
+        storage.put_file(song_id, pack_object_name(job_id, pack_name), result.zip_path)
     set_stage("done")
     return pack_name

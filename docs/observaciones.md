@@ -14,7 +14,7 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 ## Prueba de la v1 con el equipo
 
-Para que el equipo pruebe hace falta publicar la v1 en un servidor: hoy todo corre solo en la Mac de desarrollo (Docker + `pnpm dev`).
+La v1 está publicada en https://tool.example.com (VPS compartida, con un techo de 2 núcleos y 5 GB para la tool). Cada tema se procesa de a uno; un tema de 4 minutos tarda varios minutos.
 
 Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durante el desarrollo.
 
@@ -48,8 +48,8 @@ Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durant
 
 - La imagen Docker del worker pesa 10,5 GB porque torch para Linux baja los paquetes de CUDA desde PyPI. Usar el índice solo-CPU de PyTorch la achicaría mucho; está anotado en `infra/README.md`. La imagen de la API pesa 694 MB y no incluye torch.
 
-- En CPU (Mac Intel de desarrollo) `htdemucs_6s` tarda 0,70 s por segundo de audio. Para producción hace falta GPU.
-- Dentro de Docker, con el worker limitado a 2 núcleos, la separación tardó 201 s para 32 s de audio (unos 6,3 s por segundo). Una canción de 4 minutos tardaría unos 25 minutos: confirma que la separación en CPU no sirve para producción.
+- En CPU (Mac Intel de desarrollo) `htdemucs_6s` tarda 0,70 s por segundo de audio. Con GPU sería mucho más rápido; en el VPS de producción (solo CPU) la separación corre en segundo plano, ver la línea siguiente.
+- Con la imagen solo-CPU (2,9 GB) y 2 núcleos, un tema de 4 minutos tardó: análisis 2:45, separación 15:21, pack 1:36; pico de memoria anónima del worker ~2,3 GB; el pico del cgroup (`memory.current`, con caché de páginas) fue 2,9 GiB, que es la cifra que fija el límite de 3,5 GiB. La separación de 921 s para 240 s de audio equivale a unos 3,8 s por segundo. La proyección anterior (unos 25 minutos para 4 minutos de audio) salía de una medición con la imagen CUDA, 201 s para 32 s de audio (unos 6,3 s por segundo), y ya no aplica. En producción la separación es un trabajo asíncrono de unos 15 minutos por tema de 4 minutos, con una sola tarea a la vez. Alcanza para que el equipo pruebe; para uso público la cola se haría larga y sigue haciendo falta la GPU de la fase 2.
 - El primer análisis después de levantar el worker tarda unos 7 minutos porque baja los pesos de beat_this (~180 kB/s). Conviene pre-descargar los pesos al construir la imagen.
 - El worker de Linux debe usar torch 2.6 o más nuevo. La versión 2.2.2 de desarrollo solo existe porque Intel macOS no tiene wheels más nuevas, y tiene una vulnerabilidad conocida (CVE-2025-32434).
 

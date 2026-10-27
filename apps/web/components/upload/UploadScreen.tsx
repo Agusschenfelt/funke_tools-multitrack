@@ -4,10 +4,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, describeError, startAnalyze, startSeparate, uploadSong } from "@/lib/api";
 import type { TrackedJobs } from "@/lib/processing";
+import { rememberSong, updateRecent } from "@/lib/recentSongs";
+import { recentFromUpload } from "@/lib/recentVerification";
 import { processingQuery, startMissingJobs } from "@/lib/startJobs";
 import { formatBytes } from "@/lib/format";
-import { ACCEPT, MAX_UPLOAD_MB, formatsLabel, validateFile } from "@/lib/upload";
+import { ACCEPT, MAX_UPLOAD_MB, checkDuration, formatsLabel, readDuration, validateFile } from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
+import { RecentSongs } from "./RecentSongs";
 import styles from "./UploadScreen.module.css";
 
 type State =
@@ -33,6 +36,7 @@ export function UploadScreen() {
         analyze: () => startAnalyze(songId, { sections: true }),
         separate: () => startSeparate(songId),
       });
+      updateRecent(songId, { jobs: tracked }, Date.now());
       if (error) {
         setState({ phase: "error", message: describeError(error), songId, file, started: tracked });
         return;
@@ -50,6 +54,11 @@ export function UploadScreen() {
         setState({ phase: "error", message: check.message });
         return;
       }
+      const duration = checkDuration(await readDuration(file));
+      if (!duration.ok) {
+        setState({ phase: "error", message: duration.message });
+        return;
+      }
       const controller = new AbortController();
       abortRef.current = controller;
       setState({ phase: "uploading", file, fraction: 0 });
@@ -58,6 +67,8 @@ export function UploadScreen() {
           signal: controller.signal,
           onProgress: (fraction) => setState({ phase: "uploading", file, fraction }),
         });
+        const now = Date.now();
+        rememberSong(recentFromUpload(song, now), now);
         await startJobs(song.id, file);
       } catch (error) {
         if (error instanceof ApiError && error.kind === "aborted") {
@@ -151,7 +162,7 @@ export function UploadScreen() {
               Elegir archivo
             </button>
             <p className={styles.constraints}>
-              {formatsLabel()}. Hasta {MAX_UPLOAD_MB} MB.
+              {formatsLabel()}. Hasta {MAX_UPLOAD_MB} MB y 10 minutos.
             </p>
           </div>
         )}
@@ -175,6 +186,8 @@ export function UploadScreen() {
           )}
         </div>
       )}
+
+      <RecentSongs />
 
       <p className={styles.rights}>
         La herramienta separa audio y no otorga derechos sobre la música que subís. Subí solo

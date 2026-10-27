@@ -13,7 +13,8 @@ Well-known names:
 * ``sections.json``: the sections the user sees and edits; ``sections.detected.json``: the latest
   detector output (see ``analyze_job`` for who writes which).
 * ``stems/<stem>.wav`` plus ``stems/stemset.json``: separation output (``STEMS_PREFIX``).
-* ``packs/<name>.zip``: built Stage Packs (``PACKS_PREFIX``).
+* ``packs/<job_id>/<name>.zip``: built Stage Packs, one directory per pack job so packs of the
+  same song never overwrite each other (``PACKS_PREFIX``, ``pack_object_name``).
 * ``jobs/<job_id>.json``: what a finished job returned (the API reads it when RQ forgot the job);
   ``jobs/<job_id>.lock``: present while that job runs (``JOBS_PREFIX``, ``LOCK_SUFFIX``).
 """
@@ -33,6 +34,11 @@ STEMS_PREFIX = "stems/"
 PACKS_PREFIX = "packs/"
 JOBS_PREFIX = "jobs/"
 LOCK_SUFFIX = ".lock"
+
+
+def pack_object_name(job_id: str, zip_name: str) -> str:
+    """Stored name of a Stage Pack: unique per job, readable ZIP name kept as the basename."""
+    return f"{PACKS_PREFIX}{job_id}/{zip_name}"
 
 
 def lock_name(job_id: str) -> str:

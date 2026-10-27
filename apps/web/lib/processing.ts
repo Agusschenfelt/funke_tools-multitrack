@@ -56,6 +56,9 @@ export const TASK_LABEL: Record<Exclude<JobKind, "stagepack">, string> = {
 
 /** Plain-Spanish reason for a failed job; the raw server text stays out of the UI. */
 export function failureMessage(kind: Exclude<JobKind, "stagepack">, error: string | null): string {
+  // The worker's own Spanish message for an over-long song is already user-facing: show it as is.
+  const tooLong = (error ?? "").match(/El tema dura \d+:\d{2} y el máximo es \d+:\d{2}\./);
+  if (tooLong) return tooLong[0];
   const text = (error ?? "").toLowerCase();
   if (/out of memory|\boom\b|memory|killed/.test(text)) {
     return "El servidor se quedó sin memoria con este archivo. Probá con un archivo más corto.";

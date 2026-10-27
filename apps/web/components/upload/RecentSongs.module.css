@@ -1,0 +1,101 @@
+.recent {
+  margin-top: var(--space-6);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+}
+
+.list {
+  margin-top: var(--space-3);
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.link {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-1) var(--space-4);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  padding: var(--space-3) 0;
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.name {
+  grid-column: 1;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  grid-column: 1;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.go {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--graphite);
+}
+
+.link:hover .go,
+.link:focus-visible .go {
+  color: var(--paper);
+  text-decoration-color: var(--paper);
+}
+
+.link:focus-visible,
+.remove:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 2px;
+}
+
+.remove {
+  min-width: var(--touch);
+  min-height: var(--touch);
+  align-self: center;
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 0;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.remove:hover {
+  color: var(--paper);
+}
+
+@media (max-width: 36rem) {
+  .link {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .go {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
+}

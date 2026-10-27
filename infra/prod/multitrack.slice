@@ -1,0 +1,23 @@
+# systemd slice that caps the whole multitrack stack on the shared VPS.
+# Install:   sudo cp infra/prod/multitrack.slice /etc/systemd/system/multitrack.slice
+#            sudo systemctl daemon-reload && sudo systemctl start multitrack.slice
+# Containers join it through `cgroup_parent: multitrack.slice` (needs Docker's systemd cgroup
+# driver: `docker info | grep -i "cgroup driver"` must print `systemd`).
+# These are ceilings for the group, on top of the per-container limits in docker-compose.prod.yml.
+[Unit]
+Description=Multitrack tool resource cap (isolated from client containers)
+
+[Slice]
+# 200% = two full cores of the 4 vCPUs, shared by every multitrack container.
+CPUQuota=200%
+# Low weight: when the host is contended, client containers (default weight 100) win.
+CPUWeight=50
+IOWeight=50
+# Hard memory ceiling for the group: worker 3.5G plus the small services, with headroom.
+MemoryMax=5G
+# High-water mark where the kernel starts reclaiming before the hard limit is hit.
+MemoryHigh=4608M
+# No swap: a runaway job is OOM-killed inside the slice instead of thrashing the host.
+MemorySwapMax=0
+# Fork-bomb guard for the whole group.
+TasksMax=1024

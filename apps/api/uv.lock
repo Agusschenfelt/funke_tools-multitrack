@@ -131,9 +131,11 @@ requires-dist = [
     { name = "soundfile" },
     { name = "soxr", specifier = ">=1.1.0" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'ml'", specifier = ">=2,<2.3" },
-    { name = "torch", marker = "(platform_machine != 'x86_64' and extra == 'ml') or (sys_platform != 'darwin' and extra == 'ml')", specifier = ">=2.6" },
+    { name = "torch", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'ml') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'ml')", specifier = ">=2.6" },
+    { name = "torch", marker = "sys_platform == 'linux' and extra == 'ml'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'ml'", specifier = "<2.3" },
-    { name = "torchaudio", marker = "(platform_machine != 'x86_64' and extra == 'ml') or (sys_platform != 'darwin' and extra == 'ml')", specifier = ">=2.6" },
+    { name = "torchaudio", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'ml') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'ml')", specifier = ">=2.6" },
+    { name = "torchaudio", marker = "sys_platform == 'linux' and extra == 'ml'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "typer" },
 ]
 provides-extras = ["ml", "analysis", "essentia"]
