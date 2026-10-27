@@ -56,6 +56,7 @@ def test_stage_pack_options_defaults() -> None:
     assert options.straight_grid is False
     assert options.sample_rate == 44100
     assert options.include_vocals is False
+    assert options.extend_grid is True
     assert options.language == "es"
 
 

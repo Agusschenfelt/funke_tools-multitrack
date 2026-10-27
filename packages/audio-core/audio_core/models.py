@@ -20,6 +20,9 @@ class Grid(BaseModel):
     downbeats: list[float]
     time_signature: str
     notes: list[str] = []
+    # Time of the first detected beat when the grid was extended backwards over a beatless
+    # intro; beats and downbeats before it are estimated. None for grids as detected.
+    extrapolated_until: float | None = None
 
 
 class KeyInfo(BaseModel):
@@ -115,4 +118,6 @@ class StagePackOptions(BaseModel):
     straight_grid: bool = False
     sample_rate: Literal[44100, 48000] = 44100
     include_vocals: bool = False
+    # Keep the estimated grid over a beatless intro; False starts click and cues at the first beat.
+    extend_grid: bool = True
     language: Literal["es", "en"] = "es"
