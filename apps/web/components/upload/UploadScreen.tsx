@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, describeError, startAnalyze, startSeparate, uploadSong } from "@/lib/api";
 import type { TrackedJobs } from "@/lib/processing";
 import { rememberSong, updateRecent } from "@/lib/recentSongs";
@@ -18,12 +18,13 @@ import {
   validateFile,
 } from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
+import { DropOverlay } from "./DropOverlay";
+import { useWindowFileDrag } from "./useWindowFileDrag";
 import { RecentSongs } from "./RecentSongs";
 import styles from "./UploadScreen.module.css";
 
 type State =
   | { phase: "idle" }
-  | { phase: "dragging" }
   | { phase: "uploading"; file: File; fraction: number }
   | { phase: "starting"; file: File }
   | { phase: "error"; message: string; songId?: string; file?: File; started?: TrackedJobs };
@@ -91,18 +92,13 @@ export function UploadScreen() {
 
   const pick = () => inputRef.current?.click();
 
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file) void upload(file);
-    else setState({ phase: "idle" });
-  };
-
   const busy = state.phase === "uploading" || state.phase === "starting";
+  const dropping = useWindowFileDrag((dropped) => void upload(dropped), !busy);
   const file = "file" in state ? state.file : undefined;
 
   return (
     <main className={styles.page}>
+      <DropOverlay open={dropping} />
       <h1 className={styles.title}>Subí una canción</h1>
       <p className={styles.lead}>
         Separamos las pistas y analizamos tempo, tonalidad y secciones. Después la escuchás y
@@ -112,12 +108,6 @@ export function UploadScreen() {
       <div
         className={styles.zone}
         data-state={state.phase}
-        onDragOver={(event) => {
-          event.preventDefault();
-          if (!busy) setState({ phase: "dragging" });
-        }}
-        onDragLeave={() => state.phase === "dragging" && setState({ phase: "idle" })}
-        onDrop={busy ? (event) => event.preventDefault() : onDrop}
       >
         <input
           ref={inputRef}
@@ -164,7 +154,7 @@ export function UploadScreen() {
           <div className={styles.idle}>
             <BarProgress fraction={null} />
             <p className={styles.drop}>
-              {state.phase === "dragging" ? "Soltá el archivo" : "Arrastrá el archivo acá"}
+              Arrastrá el archivo acá
             </p>
             <button type="button" className={styles.primary} onClick={pick}>
               Elegir archivo

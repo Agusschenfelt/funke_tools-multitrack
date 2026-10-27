@@ -32,11 +32,6 @@
     background-color var(--duration-fast) var(--ease-out);
 }
 
-.zone[data-state="dragging"] {
-  border-color: var(--orange);
-  background: var(--ink-lifted);
-}
-
 /* The bar ruler runs the full width of the drop zone; the copy and buttons keep a readable measure. */
 .idle,
 .progress {
