@@ -1,73 +1,34 @@
-.panel {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.bar {
+/* Undo, redo and save share the toolbar row; the status line follows them. */
+.edit {
+  order: 3;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-2);
-}
-
-/* Undo, redo and save sit together; the status line takes the rest of the row. */
-.save {
-  margin-left: var(--space-2);
+  gap: var(--space-2);
 }
 
 .message {
-  flex: 1 1 14rem;
   min-width: 0;
-  margin-left: var(--space-2);
+  max-width: 24rem;
   color: var(--paper-dim);
   font-size: var(--text-sm);
+}
+
+@media (pointer: fine) and (min-width: 48rem) {
+  .dense .button,
+  .dense .save {
+    min-height: 2.25rem;
+  }
+}
+
+/* Inside the editor row it stays on one line, just before Cerrar. */
+.editor .edit {
+  flex: none;
+  flex-wrap: nowrap;
 }
 
 .message:empty {
   display: none;
-}
-
-.hintWide {
-  max-width: var(--measure);
-  color: var(--paper-dim);
-  font-size: var(--text-sm);
-}
-
-.hintNarrow {
-  display: none;
-  color: var(--paper-dim);
-  font-size: var(--text-sm);
-}
-
-.hintNarrow summary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--touch);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  cursor: pointer;
-  list-style: none;
-}
-
-.hintNarrow summary::-webkit-details-marker {
-  display: none;
-}
-
-.hintNarrow summary::before {
-  content: "";
-  width: 0.5rem;
-  height: 0.5rem;
-  border-right: 2px solid currentcolor;
-  border-bottom: 2px solid currentcolor;
-  transform: rotate(-45deg);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-
-.hintNarrow[open] summary::before {
-  transform: rotate(45deg);
 }
 
 .failed {
@@ -213,30 +174,31 @@
 }
 
 @media (max-width: 47.99rem) {
-  /* One compact row: Deshacer, Rehacer, Guardar share the width. */
-  .bar {
-    flex-wrap: wrap;
+  /* Deshacer, Rehacer and Guardar share a full-width row, right under the sheet's title. */
+  .edit,
+  .editor .edit {
+    order: 1;
+    flex: 1 1 100%;
   }
 
-  .bar .button,
-  .bar .save {
+  .fields {
+    order: 2;
+  }
+
+  .actions {
+    order: 3;
+  }
+
+  .edit .button,
+  .edit .save {
     flex: 1 1 0;
     min-height: var(--touch);
-    margin-left: 0;
     padding: 0 var(--space-2);
   }
 
   .message {
     flex: 1 1 100%;
-    margin-left: 0;
-  }
-
-  .hintWide {
-    display: none;
-  }
-
-  .hintNarrow {
-    display: block;
+    max-width: none;
   }
 
   /* Bottom sheet sitting on top of the fixed transport, with its own scroll. */

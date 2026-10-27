@@ -1,0 +1,90 @@
+.ruler {
+  width: 100%;
+}
+
+.bars {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  height: 2.5rem;
+  border-right: 1px solid var(--graphite);
+  animation: draw var(--duration-draw) var(--ease-out) backwards;
+}
+
+.bar {
+  position: relative;
+  border-left: 1px solid var(--graphite);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+/* The bar's floor line: paper-dim once the work is past it, the orange mark where it stands. */
+.bar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.bar[data-passed] {
+  border-left-color: var(--paper-dim);
+}
+
+.bar[data-passed]::after {
+  background: var(--paper-dim);
+}
+
+.bar[data-current]::after {
+  height: 4px;
+  background: var(--orange);
+}
+
+.ruler[data-finished] .bars {
+  border-right: 3px double var(--paper);
+}
+
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  margin-top: var(--space-1);
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.numbers span {
+  padding-left: 3px;
+}
+
+.numbers span[data-current] {
+  color: var(--paper);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The mark never dims: it breathes in thickness, so it stays at full orange against the ink. */
+  .bar[data-tick]::after {
+    transform-origin: bottom;
+    animation: breathe 1.6s var(--ease-out) infinite alternate;
+  }
+}
+
+@keyframes breathe {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(1.75);
+  }
+}
+
+@keyframes draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}

@@ -1,0 +1,157 @@
+.block {
+  max-width: 44rem;
+  margin-top: var(--space-6);
+}
+
+.heading {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-3) 0 var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.fact {
+  min-width: 0;
+}
+
+.fact dt {
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Fixed height: the big readout and the dash occupy the same box, so landing causes no shift. */
+.value {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-height: 4.75rem;
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.big {
+  font-size: clamp(2.5rem, 13vw, 4rem);
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.mode {
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+}
+
+.alt {
+  display: block;
+  width: 100%;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.dash {
+  color: var(--graphite);
+  font-size: var(--text-lg);
+}
+
+.group {
+  margin-top: var(--space-4);
+}
+
+.label {
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.times {
+  margin-left: var(--space-1);
+  color: var(--paper-dim);
+  letter-spacing: 0;
+}
+
+.empty {
+  max-width: var(--measure);
+  margin-top: var(--space-2);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.chords {
+  margin-top: var(--space-1);
+  font-size: var(--text-lg);
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+/* Values arrive in place; sections stamp in one by one like marks on a chord sheet. */
+@media (prefers-reduced-motion: no-preference) {
+  .enter {
+    animation: arrive 420ms var(--ease-out) backwards;
+  }
+
+  .stamp {
+    animation: stamp 420ms var(--ease-out) backwards;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+}
+
+@keyframes stamp {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (min-width: 40rem) {
+  .facts {
+    grid-template-columns: repeat(4, auto);
+    justify-content: start;
+    gap: var(--space-4) var(--space-7);
+  }
+
+  .big {
+    font-size: 3.5rem;
+  }
+}

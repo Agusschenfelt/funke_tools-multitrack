@@ -5,12 +5,12 @@ import type { StemName } from "./stems";
 export type PresetId = "original" | "karaoke" | "acapella" | "drumless" | "bassless";
 export type MixPreset = PresetId | "custom";
 
-export const PRESETS: readonly { id: PresetId; label: string }[] = [
-  { id: "original", label: "Original" },
-  { id: "karaoke", label: "Karaoke (sin voz)" },
-  { id: "acapella", label: "Acapella (solo voz)" },
-  { id: "drumless", label: "Sin batería" },
-  { id: "bassless", label: "Sin bajo" },
+export const PRESETS: readonly { id: PresetId; label: string; hint: string }[] = [
+  { id: "original", label: "Original", hint: "Original: todas las pistas" },
+  { id: "karaoke", label: "Karaoke (sin voz)", hint: "Karaoke: todo menos la voz" },
+  { id: "acapella", label: "Acapella (solo voz)", hint: "Acapella: solo la voz" },
+  { id: "drumless", label: "Sin batería", hint: "Sin batería: todo menos la batería" },
+  { id: "bassless", label: "Sin bajo", hint: "Sin bajo: todo menos el bajo" },
 ];
 
 export const CUSTOM_LABEL = "Personalizado";

@@ -9,20 +9,115 @@
 }
 
 .songBar {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: var(--space-2) var(--space-6);
   padding: var(--space-4) 0;
 }
 
 .title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
   overflow: hidden;
   font-size: var(--text-lg);
   font-weight: 800;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The name is a button that renames; it looks like the heading it sits in. */
+.titleButton {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+/* A dotted rule and a drawn pencil say "rename" at rest, on touch too (no hover needed). */
+.titleText {
+  min-width: 0;
+  overflow: hidden;
+  text-decoration: underline dotted var(--graphite);
+  text-decoration-thickness: 1px;
+  text-overflow: ellipsis;
+  text-underline-offset: 0.25em;
+}
+
+.titleButton[data-fallback] {
+  color: var(--paper-dim);
+  font-weight: 600;
+}
+
+.pencil {
+  flex: none;
+  align-self: center;
+  fill: none;
+  stroke: var(--paper-dim);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.titleButton:hover .titleText {
+  text-decoration-color: var(--paper);
+}
+
+.titleButton:hover .pencil {
+  stroke: var(--paper);
+}
+
+.duration {
+  margin-left: var(--space-3);
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+  font-weight: 400;
+}
+
+.titleInput {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: var(--ink-raised);
+  color: var(--paper);
+  font: inherit;
+}
+
+.help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.help:hover,
+.help[aria-expanded="true"] {
+  background: var(--ink-lifted);
 }
 
 .facts {
@@ -71,6 +166,18 @@
 
 .export:active {
   background: var(--orange-press);
+}
+
+/* Unsaved edits: Guardar is the one orange action, so the export steps back to an outline. */
+.export[data-blocked] {
+  border: 1px solid var(--graphite);
+  background: transparent;
+  color: var(--paper-dim);
+  cursor: not-allowed;
+}
+
+.export[data-blocked]:hover {
+  background: var(--ink-lifted);
 }
 
 .hold {
@@ -155,20 +262,54 @@
   }
 
   .songBar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
-      "title export"
-      "facts facts";
+      "title help export"
+      "facts facts facts";
     gap: var(--space-2) var(--space-4);
     padding: var(--space-3) 0;
   }
 
+  /* The name wraps instead of hiding behind the help and export buttons. */
   .title {
     grid-area: title;
+    flex-wrap: wrap;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .titleButton {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  /* Wrapped, the pencil follows the last word instead of floating at the box's edge. */
+  .titleButton {
+    display: inline;
+  }
+
+  .titleText {
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .pencil {
+    display: inline-block;
+    margin-left: var(--space-2);
+    vertical-align: -0.1em;
+  }
+
+  .export {
+    padding: 0 var(--space-4);
   }
 
   .export {
     grid-area: export;
+  }
+
+  .help {
+    grid-area: help;
   }
 
   .facts {
@@ -183,14 +324,9 @@
   .mode {
     font-size: var(--text-base);
   }
-
-  /* Phone: the same note sits in the mixer's "Más" menu so the first lane stays above the fold. */
-  .sizeNote {
-    display: none;
-  }
 }
 
-.sizeNote {
+.quiet {
   margin: var(--space-2) 0 var(--space-3);
   color: var(--paper-dim);
   font-size: var(--text-sm);

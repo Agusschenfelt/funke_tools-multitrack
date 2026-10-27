@@ -1,0 +1,103 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 0.5rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  min-height: 4.25rem;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.mark {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.35rem;
+  border: 1px solid var(--graphite);
+}
+
+.row[data-status="running"] .mark {
+  border-color: var(--orange);
+  background: var(--orange);
+}
+
+.row[data-status="finished"] .mark {
+  border-color: var(--paper);
+  background: var(--paper);
+}
+
+.row[data-status="failed"] .mark {
+  border-color: var(--error);
+  background: var(--error);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.task {
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.line {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.row[data-status="failed"] .line {
+  color: var(--error);
+}
+
+.row[data-status="queued"] .line,
+.row[data-status="checking"] .line {
+  color: var(--paper-dim);
+  font-weight: 400;
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  min-width: 3.5rem;
+  font-size: var(--text-sm);
+}
+
+.step {
+  color: var(--paper);
+}
+
+.clock {
+  min-height: 1.25rem;
+  color: var(--paper-dim);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .row[data-status="running"] .mark {
+    animation: breathe 1.6s var(--ease-out) infinite alternate;
+  }
+}
+
+/* The marker never dims: it swells slightly, so it stays at full orange against the ink. */
+@keyframes breathe {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.35);
+  }
+}

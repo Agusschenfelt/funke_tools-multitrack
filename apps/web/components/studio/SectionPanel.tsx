@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Section, SectionName } from "@/lib/api";
 import { barAt, SECTION_OPTIONS } from "@/lib/sections/edit";
 import { sectionLabel } from "@/lib/processing";
+import { editMessage } from "@/lib/studio/toolbar";
 import type { SaveStatus } from "./useSectionEditor";
 import styles from "./SectionPanel.module.css";
 
-interface SectionToolbarProps {
-  sectionCount: number;
+interface EditControlsProps {
+  /** In the toolbar row: buttons match the row's 36px height instead of the editor's 44px. */
+  dense?: boolean;
   dirty: boolean;
   saving: boolean;
   status: SaveStatus;
@@ -20,6 +22,8 @@ interface SectionToolbarProps {
 }
 
 interface SectionEditorProps {
+  /** Undo, redo and save: they live in the editor row while it is open, since it covers the toolbar. */
+  edit?: ReactNode;
   sections: readonly Section[];
   selected: number;
   downbeats: readonly number[];
@@ -29,19 +33,6 @@ interface SectionEditorProps {
   onNudge: (index: number, bars: number) => void;
   onPlay: (index: number) => void;
   onClose: () => void;
-}
-
-function statusText(status: SaveStatus): string {
-  switch (status.phase) {
-    case "saving":
-      return "Guardando las secciones…";
-    case "saved":
-      return "Secciones guardadas.";
-    case "error":
-      return `No se pudieron guardar las secciones. ${status.message} Tus cambios siguen acá.`;
-    default:
-      return "";
-  }
 }
 
 /** The free label commits on Enter or blur, so history gets one step per label, not per key. */
@@ -64,11 +55,12 @@ function LabelField({ value, onCommit }: { value: string; onCommit: (label: stri
 }
 
 /**
- * History and save in one compact row above the strip, with the how-to text one tap away on a
- * phone so the strip and the first lane stay above the fold.
+ * Undo, redo and save for the section edits, at the end of the toolbar row. The caller renders
+ * it only while there is something to edit (see `editControlsVisible`); the keyboard shortcuts
+ * work either way.
  */
-export function SectionToolbar({
-  sectionCount,
+export function EditControls({
+  dense = false,
   dirty,
   saving,
   status,
@@ -77,38 +69,38 @@ export function SectionToolbar({
   onUndo,
   onRedo,
   onSave,
-}: SectionToolbarProps) {
-  const message = statusText(status);
-  const hint =
-    sectionCount === 0
-      ? "Esta canción no tiene secciones."
-      : "Elegí una sección para renombrarla, moverla o dividirla. Arrastrá el borde entre dos secciones para ajustarlo.";
+}: EditControlsProps) {
+  const message = editMessage(status);
   return (
-    <section className={styles.panel} aria-label="Editar secciones">
-      <div className={styles.bar}>
-        <button type="button" className={styles.button} disabled={!canUndo} onClick={onUndo}>
-          Deshacer
-        </button>
-        <button type="button" className={styles.button} disabled={!canRedo} onClick={onRedo}>
-          Rehacer
-        </button>
-        <button type="button" className={styles.save} disabled={!dirty || saving} onClick={onSave}>
-          Guardar
-        </button>
-        <p
-          className={status.phase === "error" ? `${styles.message} ${styles.failed}` : styles.message}
-          role={status.phase === "error" ? "alert" : "status"}
-        >
-          {message}
-          {message === "" && dirty ? "Cambios sin guardar." : ""}
-        </p>
-      </div>
-      <p className={styles.hintWide}>{hint}</p>
-      <details className={styles.hintNarrow}>
-        <summary>Cómo se editan</summary>
-        <p className={styles.hint}>{hint}</p>
-      </details>
-    </section>
+    <div className={dense ? `${styles.edit} ${styles.dense}` : styles.edit} role="group" aria-label="Editar secciones">
+      <button
+        type="button"
+        className={styles.button}
+        disabled={!canUndo}
+        aria-keyshortcuts="Control+Z Meta+Z"
+        onClick={onUndo}
+      >
+        Deshacer
+      </button>
+      <button
+        type="button"
+        className={styles.button}
+        disabled={!canRedo}
+        aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+        onClick={onRedo}
+      >
+        Rehacer
+      </button>
+      <button type="button" className={styles.save} disabled={!dirty || saving} onClick={onSave}>
+        Guardar
+      </button>
+      <p
+        className={status.phase === "error" ? `${styles.message} ${styles.failed}` : styles.message}
+        role={status.phase === "error" ? "alert" : "status"}
+      >
+        {message}
+      </p>
+    </div>
   );
 }
 
@@ -118,6 +110,7 @@ export function SectionToolbar({
  * Either way selecting a section never moves the waveforms. Escape closes it.
  */
 export function SectionEditor({
+  edit = null,
   sections,
   selected,
   downbeats,
@@ -227,6 +220,7 @@ export function SectionEditor({
             Unir →
           </button>
         </div>
+        {edit}
         {!hasGrid && (
           <p className={styles.hint}>
             Sin grilla de compases no se pueden mover los bordes ni dividir; sí renombrar y unir.

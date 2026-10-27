@@ -10,19 +10,14 @@ import {
   getSong,
   startAnalyze,
   startSeparate,
-  type Analysis,
-  type Section,
   type SongDetail,
 } from "@/lib/api";
 import {
   TASK_LABEL,
   failureMessage,
-  formatDuration,
   isTerminal,
-  keyModeLabel,
   resolveTracked,
   rowView,
-  sectionsSummary,
   stageLabel,
   statusLabel,
   type RowKind,
@@ -32,7 +27,12 @@ import {
 import { createRetryGate, withJob } from "@/lib/retryGate";
 import { readTracked, writeTracked } from "@/lib/trackedJobs";
 import { titleFromFilename } from "@/lib/strip";
+import { rulerPosition, separationEstimate, stepView, titleProgress } from "@/lib/wait";
 import { JobTable } from "./JobTable";
+import { ResultFill, type PartialData } from "./ResultFill";
+import { StageLines } from "./StageLines";
+import { WaitRuler } from "./WaitRuler";
+import { useCompletionNotice, useTabTitle } from "./useWaitSignals";
 import { useJob } from "./useJob";
 import styles from "./ProcessingView.module.css";
 
@@ -104,11 +104,6 @@ export function ProcessingView({ songId, query }: { songId: string; query: Query
   );
 }
 
-interface PartialData {
-  analysis: Analysis;
-  sections: Section[];
-}
-
 function ProcessingBody({
   songId,
   initialSong,
@@ -124,6 +119,7 @@ function ProcessingBody({
   const [partial, setPartial] = useState<PartialData | null>(null);
   const [retrying, setRetrying] = useState<readonly RowKind[]>([]);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [wasWaiting, setWasWaiting] = useState(false);
 
   const analyzePoll = useJob(tracked.analyze);
   const separatePoll = useJob(tracked.separate);
@@ -131,6 +127,7 @@ function ProcessingBody({
   // Latest ids for retries that finish out of order; the gate drops results from superseded retries.
   const trackedRef = useRef(initialTracked);
   const [gate] = useState(createRetryGate);
+  const openRef = useRef<HTMLAnchorElement>(null);
 
   // A tracked job with no answer yet (and not reported lost) is loading, not missing.
   const analyzeRow = rowView("analyze", analyzePoll.job, song.artifacts.analysis, now,
@@ -147,6 +144,22 @@ function ProcessingBody({
   const analysisDone = analyzeRow.status === "finished";
   const allDone = rows.every((row) => row.status === "finished");
   const offline = analyzePoll.offline || separatePoll.offline;
+  const title = titleFromFilename(song.filename);
+
+  // Only a wait the person watched earns the finale (focus and notice); a finished page just opens.
+  useEffect(() => {
+    // Remembering that the view saw work in flight is an effect of that work, not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (live) setWasWaiting(true);
+  }, [live]);
+
+  useTabTitle(titleProgress(rows));
+  const notice = useCompletionNotice(allDone, wasWaiting, title);
+
+  // The finale: when the wait ends in front of the person, hand them the next action.
+  useEffect(() => {
+    if (allDone && wasWaiting) openRef.current?.focus();
+  }, [allDone, wasWaiting]);
 
   // One-second clock for the Tiempo column, only while something is moving.
   useEffect(() => {
@@ -180,7 +193,7 @@ function ProcessingBody({
     ])
       .then(([analysis, sections]) => setPartial({ analysis, sections: sections?.sections ?? [] }))
       .catch(() => {
-        // Not available yet or removed: the table still tells the story.
+        // Not available yet or removed: the stage lines still tell the story.
       });
     return () => controller.abort();
   }, [songId, analysisDone]);
@@ -211,19 +224,36 @@ function ProcessingBody({
     [songId, gate],
   );
 
-  const announcement = rows
-    .map((row) => `${TASK_LABEL[row.kind]}: ${rowSpeech(row)}`)
-    .join(". ");
+  const announcement = allDone
+    ? ""
+    : rows.map((row) => `${TASK_LABEL[row.kind]}: ${rowSpeech(row)}`).join(". ");
+
+  const ruler = rulerPosition(rows);
+  const totals = rows.map(stepView);
+  const stepsDone = totals.reduce((sum, v) => sum + v.done, 0);
+  const stepsTotal = totals.reduce((sum, v) => sum + v.total, 0);
+  const separating = separateRow.status === "queued" || separateRow.status === "running" ||
+    separateRow.status === "checking";
+  const estimate = separating ? separationEstimate(song.duration ?? partial?.analysis.duration) : "";
+  const stuck = rows.some((row) => row.status === "failed" || row.status === "untracked");
 
   return (
     <>
-      <h1 className={styles.title}>{titleFromFilename(song.filename)}</h1>
+      <h1 className={styles.title}>{title}</h1>
 
       <section aria-labelledby="cola-titulo" className={styles.block}>
         <h2 id="cola-titulo" className={styles.heading}>
-          Procesos
+          {allDone ? "Todo listo" : "Preparando la canción"}
         </h2>
-        <JobTable rows={rows} />
+        <WaitRuler
+          current={ruler.current}
+          passed={ruler.passed}
+          finished={ruler.finished}
+          active={live}
+          valueNow={stepsDone}
+          valueMax={stepsTotal}
+        />
+        <StageLines rows={rows} />
         <p className="visually-hidden" role="status" aria-live="polite">
           {announcement}
         </p>
@@ -231,12 +261,7 @@ function ProcessingBody({
         {offline && (
           <p className={styles.note}>Sin conexión con el servidor. Seguimos intentando.</p>
         )}
-        {!allDone && separateRow.status !== "failed" && separateRow.status !== "untracked" && (
-          <p className={styles.note}>
-            La separación puede tardar varios minutos en este servidor. Dejá esta pestaña abierta;
-            el análisis aparece en cuanto termina.
-          </p>
-        )}
+        {estimate && <p className={styles.note}>{estimate}</p>}
 
         {rows.map((row) =>
           row.status === "failed" || row.status === "untracked" ? (
@@ -265,15 +290,43 @@ function ProcessingBody({
             {retryError}
           </p>
         )}
+
+        {!stuck && (
+          <div className={styles.slot}>
+            <p className={styles.slotLine} role="status">
+              {allDone
+                ? "Análisis y pistas listos. Ya podés abrir el estudio."
+                : analysisDone
+                  ? "El análisis ya está. Las pistas llevan más; el estudio las necesita todas."
+                  : "Dejá esta pestaña abierta: te avisamos acá cuando esté."}
+            </p>
+            <div className={styles.slotAction}>
+              {allDone ? (
+                <Link
+                  ref={openRef}
+                  href={`/temas/${songId}/estudio`}
+                  className={`${styles.primary} ${wasWaiting ? styles.arrive : ""}`}
+                >
+                  Abrir el estudio
+                </Link>
+              ) : notice.state === "default" ? (
+                <button type="button" className={styles.secondary} onClick={notice.request}>
+                  Avisarme con una notificación
+                </button>
+              ) : notice.state === "granted" ? (
+                <p className={styles.slotHint}>Te vamos a mandar una notificación al terminar.</p>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        <details className={styles.detail}>
+          <summary>Detalle</summary>
+          <JobTable rows={rows} />
+        </details>
       </section>
 
-      {partial && <PartialResult partial={partial} running={!allDone} />}
-
-      {allDone && (
-        <Link href={`/temas/${songId}/estudio`} className={styles.primary}>
-          Abrir el estudio
-        </Link>
-      )}
+      <ResultFill partial={partial} complete={allDone} />
     </>
   );
 }
@@ -283,53 +336,4 @@ function rowSpeech(row: RowView): string {
   if (row.status === "checking") return "consultando";
   if (row.status === "running") return `${statusLabel(row.status)}, ${stageLabel(row.stage)}`;
   return statusLabel(row.status);
-}
-
-function PartialResult({ partial, running }: { partial: PartialData; running: boolean }) {
-  const { analysis, sections } = partial;
-  const bpm = analysis.grid ? analysis.grid.bpm.toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
-  const summary = sectionsSummary(sections);
-  return (
-    <section aria-labelledby="parcial-titulo" className={styles.block}>
-      <h2 id="parcial-titulo" className={styles.heading}>
-        {running ? "Resultado parcial" : "Resultado"}
-      </h2>
-      <dl className={styles.facts}>
-        {analysis.key && (
-          <div className={styles.fact}>
-            <dt>Tonalidad</dt>
-            <dd>
-              <span className={`${styles.big} mono`}>{analysis.key.key}</span>{" "}
-              <span className={styles.mode}>{keyModeLabel(analysis.key.mode)}</span>
-            </dd>
-          </div>
-        )}
-        {bpm && (
-          <div className={styles.fact}>
-            <dt>Tempo</dt>
-            <dd>
-              <span className={`${styles.big} mono`}>{bpm}</span>{" "}
-              <span className={styles.mode}>BPM</span>
-            </dd>
-          </div>
-        )}
-        {analysis.grid && (
-          <div className={styles.fact}>
-            <dt>Compás</dt>
-            <dd className="mono">{analysis.grid.time_signature}</dd>
-          </div>
-        )}
-        <div className={styles.fact}>
-          <dt>Duración</dt>
-          <dd className="mono">{formatDuration(analysis.duration)}</dd>
-        </div>
-      </dl>
-      {summary && (
-        <div className={styles.form}>
-          <h3 className={styles.formLabel}>Secciones detectadas</h3>
-          <p className={`${styles.formLine} mono`}>{summary}</p>
-        </div>
-      )}
-    </section>
-  );
 }
