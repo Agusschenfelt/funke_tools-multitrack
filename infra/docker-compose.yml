@@ -1,9 +1,26 @@
-# Local development services. The api and worker services are added in later features.
+# Local stack: redis, postgres, api and cpu worker.
+# Run from the repository root: docker compose -f infra/docker-compose.yml up --build
+# Variables come from infra/.env (copy infra/.env.example).
+# Only the API port is published. Redis and Postgres are reachable on the compose network only;
+# to inspect them from the host add the opt-in override infra/docker-compose.dev.yml.
+# Redis requires REDIS_PASSWORD (use URL-safe characters, e.g. `openssl rand -hex 24`).
+x-storage-env: &storage-env
+  STORAGE_ROOT: /data
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in infra/.env}@redis:6379/0
+
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # The worker runs whatever job a client queues, so Redis must not be open: require a password.
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in infra/.env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   postgres:
     image: postgres:16-alpine
@@ -11,10 +28,58 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      <<: *storage-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SIGNING_SECRET: ${SIGNING_SECRET:?set SIGNING_SECRET in infra/.env}
+      ALLOW_INSECURE_SIGNING_SECRET: ${ALLOW_INSECURE_SIGNING_SECRET:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
+      LOST_JOB_GRACE_SECONDS: ${LOST_JOB_GRACE_SECONDS:-300}
+    ports:
+      - "8000:8000"
+    volumes:
+      - storage:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/openapi.json', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker-cpu:
+    build:
+      context: ..
+      dockerfile: workers/cpu/Dockerfile
+    environment:
+      <<: *storage-env
+    # CUES_DIR is intentionally not set: the image ships assets/cues and audio-core finds it.
+    cpus: 2
+    volumes:
+      - storage:/data
+      - model_cache:/cache
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  storage:
+  model_cache:

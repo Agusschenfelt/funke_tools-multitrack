@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from audio_core.constants import CHANNELS, DTYPE, SAMPLE_RATE
+from audio_core.extras import MissingExtraError, require
 from audio_core.io import write_wav
 from audio_core.models import ModelVersion, Stem, StemSet
 
@@ -76,9 +77,9 @@ def separate(
         raise SeparationError(f"expected non-empty audio shaped (2, n_samples), got {audio.shape}")
 
     try:
-        import torch
-        from demucs.apply import apply_model
-        from demucs.pretrained import get_model
+        torch = require("torch")
+        apply_model = require("demucs.apply").apply_model
+        get_model = require("demucs.pretrained").get_model
 
         torch.set_num_threads(os.cpu_count() or 1)
 
@@ -113,7 +114,7 @@ def separate(
             )[0]
         elapsed = time.perf_counter() - apply_start
         estimates = (estimates * (std + _NORMALIZE_EPSILON) + mean).cpu().numpy()
-    except SeparationError:
+    except (SeparationError, MissingExtraError):
         raise
     except Exception as exc:  # noqa: BLE001 - surface any model/download/inference failure
         raise SeparationError(f"separation failed: {exc}") from exc

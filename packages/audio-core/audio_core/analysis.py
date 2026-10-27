@@ -17,6 +17,7 @@ from typing import Literal
 import numpy as np
 
 from audio_core.constants import SAMPLE_RATE
+from audio_core.extras import MissingExtraError, require
 from audio_core.models import Analysis, Grid, KeyInfo, Loudness, ModelVersion
 
 BEAT_MODEL = "final0"
@@ -73,10 +74,12 @@ def detect_beats(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (beat_times, downbeat_times) in seconds using beat_this."""
     try:
-        from beat_this.inference import Audio2Beats
+        Audio2Beats = require("beat_this.inference").Audio2Beats  # noqa: N806
 
         tracker = Audio2Beats(checkpoint_path=checkpoint, device=device, dbn=False)
         beats, downbeats = tracker(to_mono(audio), SAMPLE_RATE)
+    except MissingExtraError:
+        raise
     except Exception as exc:  # noqa: BLE001 - surface any model/download failure uniformly
         raise AnalysisError(f"beat tracking failed: {exc}") from exc
     return np.asarray(beats, dtype=np.float64), np.asarray(downbeats, dtype=np.float64)
@@ -155,7 +158,7 @@ def unknown_key(note: str) -> KeyInfo:
 
 def estimate_key_librosa(audio: np.ndarray) -> KeyInfo:
     """Krumhansl-Schmuckler key estimate from time-averaged CQT chroma."""
-    import librosa
+    librosa = require("librosa")
 
     chroma = librosa.feature.chroma_cqt(y=to_mono(audio), sr=SAMPLE_RATE).mean(axis=1)
     if not np.all(np.isfinite(chroma)) or float(np.std(chroma)) < CHROMA_FLATNESS_EPSILON:
@@ -250,7 +253,7 @@ def true_peak(audio: np.ndarray) -> float:
 
 def measure_loudness(audio: np.ndarray) -> Loudness:
     """Integrated LUFS (BS.1770) and true peak in dBTP from a 4x oversampled signal."""
-    import pyloudnorm as pyln
+    pyln = require("pyloudnorm")
 
     meter = pyln.Meter(SAMPLE_RATE)
     lufs = float(meter.integrated_loudness(audio.T.astype(np.float64)))
@@ -267,7 +270,11 @@ def measure_loudness(audio: np.ndarray) -> Loudness:
 def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = None) -> Analysis:
     """Analyze decoded audio of shape (2, n_samples) at 44.1 kHz."""
     options = options or AnalyzeOptions()
-    resolve_key_backend(options.key_backend)  # fail fast, before the slow beat model runs
+    key_backend = resolve_key_backend(options.key_backend)
+    # Fail fast, before the slow beat model runs: a missing extra must not surface only after it.
+    if key_backend == "librosa":
+        require("librosa")
+    require("pyloudnorm")
     beats, downbeats = detect_beats(
         audio, checkpoint=options.beat_checkpoint, device=options.device
     )
