@@ -20,6 +20,9 @@ class Grid(BaseModel):
     downbeats: list[float]
     time_signature: str
     notes: list[str] = []
+    # Time of the first detected beat when the grid was extended backwards over a beatless
+    # intro; beats and downbeats before it are estimated. None for grids as detected.
+    extrapolated_until: float | None = None
 
 
 class KeyInfo(BaseModel):
@@ -49,6 +52,19 @@ class Stem(BaseModel):
     name: str
     path: str
     samples: int
+    # Compressed copy for the studio, relative to the stems directory (``preview/<name>.m4a``).
+    preview: str | None = None
+
+
+class PreviewInfo(BaseModel):
+    """How the stem previews were encoded; optional, absent for songs separated before them."""
+
+    codec: str = "aac"
+    container: str = "m4a"
+    bitrate_kbps: int
+    # Encoder delay at the start of each preview. Decoders that honor the mp4 edit list drop it;
+    # a player that does not must skip this many samples to line up with the WAV stems.
+    priming_samples: int
 
 
 class StemSet(BaseModel):
@@ -62,6 +78,7 @@ class StemSet(BaseModel):
     samples: int
     sample_rate: int = SAMPLE_RATE
     stems: list[Stem]
+    preview: PreviewInfo | None = None
 
 
 class SectionName(StrEnum):
@@ -115,4 +132,6 @@ class StagePackOptions(BaseModel):
     straight_grid: bool = False
     sample_rate: Literal[44100, 48000] = 44100
     include_vocals: bool = False
+    # Keep the estimated grid over a beatless intro; False starts click and cues at the first beat.
+    extend_grid: bool = True
     language: Literal["es", "en"] = "es"

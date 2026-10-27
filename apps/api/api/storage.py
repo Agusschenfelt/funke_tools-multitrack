@@ -7,7 +7,8 @@ the ``Storage`` protocol and ``LocalStorage`` into a shared light package (or in
 light core) and delete this copy.
 
 Well-known names (same as the worker): ``source.<ext>``, ``analysis.json``, ``sections.json``,
-``stems/<stem>.wav`` + ``stems/stemset.json``, ``packs/<job_id>/<name>.zip`` (older flat
+``stems/<stem>.wav`` + ``stems/stemset.json`` (+ ``stems/preview/<stem>.m4a``),
+``packs/<job_id>/<name>.zip`` (older flat
 ``packs/<name>.zip`` stay servable).
 """
 
@@ -20,6 +21,7 @@ ANALYSIS = "analysis.json"
 SECTIONS = "sections.json"
 STEMSET = "stems/stemset.json"
 STEMS_PREFIX = "stems/"
+PREVIEW_PREFIX = "stems/preview/"
 PACKS_PREFIX = "packs/"
 JOBS_PREFIX = "jobs/"
 INCOMING_DIR = ".incoming"  # not a valid song id, so the worker's list_songs ignores it

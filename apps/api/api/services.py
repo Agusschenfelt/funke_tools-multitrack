@@ -23,15 +23,22 @@ from api.queueing import (
     QueueUnavailable,
     map_status,
 )
-from api.schemas import ArtifactLink, Artifacts
+from api.schemas import ArtifactLink, Artifacts, PreviewMeta
 
 DOWNLOAD_PREFIXES = (names.PACKS_PREFIX, names.STEMS_PREFIX)
-DOWNLOAD_SUFFIXES = {".zip": "application/zip", ".wav": "audio/wav"}
+DOWNLOAD_SUFFIXES = {".zip": "application/zip", ".wav": "audio/wav", ".m4a": "audio/mp4"}
 
 
 def downloadable(name: str) -> bool:
-    """Only packs and stem audio can be served through tokens."""
-    return name.startswith(DOWNLOAD_PREFIXES) and any(name.endswith(s) for s in DOWNLOAD_SUFFIXES)
+    """Only packs, stem audio and stem previews can be served through tokens.
+
+    Compressed ``.m4a`` is served only as a stem preview (``stems/preview/<stem>.m4a``).
+    """
+    if not name.startswith(DOWNLOAD_PREFIXES):
+        return False
+    if name.endswith(".m4a"):
+        return name.startswith(names.PREVIEW_PREFIX)
+    return any(name.endswith(s) for s in DOWNLOAD_SUFFIXES)
 
 
 def token_expiry(ctx: AppContext, song: Song) -> datetime:
@@ -61,16 +68,41 @@ def pack_stored_name(ctx: AppContext, job: Job, filename: str) -> str | None:
         return None
 
 
+def _preview_meta(ctx: AppContext, song: Song) -> PreviewMeta | None:
+    """Preview encoding facts from ``stemset.json``; None when absent or unreadable.
+
+    A missing sample rate is not guessed: without it the preview cannot be aligned, so there is
+    no preview metadata.
+    """
+    try:
+        data = json.loads(ctx.storage.get_bytes(song.id, names.STEMSET))
+        info = data["preview"]
+        return PreviewMeta(
+            samples=int(data["samples"]),
+            sample_rate=int(data["sample_rate"]),
+            priming_samples=int(info["priming_samples"]),
+        )
+    except (names.StorageError, KeyError, TypeError, ValueError):
+        return None
+
+
 def artifacts_of(session: Session, ctx: AppContext, song: Song) -> Artifacts:
     store = ctx.storage
     state = session.get(SectionsState, song.id)
-    stems = [n for n in store.list_names(song.id, names.STEMS_PREFIX) if downloadable(n)]
+    stems = [
+        n
+        for n in store.list_names(song.id, names.STEMS_PREFIX)
+        if downloadable(n) and "/" not in n[len(names.STEMS_PREFIX) :]
+    ]
+    previews = [n for n in store.list_names(song.id, names.PREVIEW_PREFIX) if downloadable(n)]
     packs = [n for n in store.list_names(song.id, names.PACKS_PREFIX) if downloadable(n)]
     return Artifacts(
         analysis=store.exists(song.id, names.ANALYSIS),
         sections=store.exists(song.id, names.SECTIONS),
         sections_edited=bool(state and state.edited),
         stems=[make_link(ctx, song, n) for n in stems],
+        previews=[make_link(ctx, song, n) for n in previews],
+        preview=_preview_meta(ctx, song) if previews else None,
         packs=[make_link(ctx, song, n) for n in packs],
     )
 

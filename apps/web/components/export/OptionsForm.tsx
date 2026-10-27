@@ -215,6 +215,14 @@ export function OptionsForm({
         onChange={(straightGrid) => onChange({ straightGrid })}
       />
 
+      <Switch
+        id="h-extend"
+        label="Extender la grilla a la intro"
+        hint="Útil si la intro sigue el mismo tempo pero sin batería. Desactivalo si la intro es libre."
+        checked={options.extendGrid}
+        onChange={(extendGrid) => onChange({ extendGrid })}
+      />
+
       <Group id="h-rate" legend="Frecuencia" hint="Los WAV salen a 24 bits. Usá la frecuencia de tu proyecto.">
         <Radios
           name="rate"

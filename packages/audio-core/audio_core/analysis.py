@@ -18,6 +18,11 @@ import numpy as np
 
 from audio_core.constants import SAMPLE_RATE
 from audio_core.extras import MissingExtraError, require
+from audio_core.gridfix import (
+    GRID_POSTPROCESS_VERSION,
+    extrapolate_lead_in,
+    remove_outlier_beats,
+)
 from audio_core.models import Analysis, Grid, KeyInfo, Loudness, ModelVersion
 
 BEAT_MODEL = "final0"
@@ -111,15 +116,25 @@ def infer_time_signature(beats: np.ndarray, downbeats: np.ndarray) -> tuple[str,
     return signature, []
 
 
-def build_grid(beats: np.ndarray, downbeats: np.ndarray) -> Grid:
+def build_grid(beats: np.ndarray, downbeats: np.ndarray, *, postprocess: bool = True) -> Grid:
+    """Grid from detected beats; by default also drops outlier beats and extrapolates a lead-in."""
+    removed = 0
+    if postprocess:
+        beats, downbeats, removed = remove_outlier_beats(beats, downbeats)
     signature, notes = infer_time_signature(beats, downbeats)
-    return Grid(
+    if removed:
+        notes = [*notes, f"removed {removed} outlier beat{'s' if removed != 1 else ''}"]
+    grid = Grid(
         bpm=compute_bpm(beats),
         beats=[round(float(t), 4) for t in beats],
         downbeats=[round(float(t), 4) for t in downbeats],
         time_signature=signature,
         notes=notes,
     )
+    if postprocess and downbeats.size:
+        per_bar = int(signature.split("/")[0])
+        grid = extrapolate_lead_in(grid, per_bar)
+    return grid
 
 
 # --- Key ---------------------------------------------------------------------------------
@@ -293,6 +308,11 @@ def analyze(audio: np.ndarray, source: str, *, options: AnalyzeOptions | None = 
                 name="beat_this",
                 version=_package_version("beat_this"),
                 source=f"{options.beat_checkpoint} checkpoint",
+            ),
+            "grid_postprocess": ModelVersion(
+                name="grid-postprocess",
+                version=GRID_POSTPROCESS_VERSION,
+                source="outlier beat cleanup + backward lead-in extrapolation",
             ),
             "key": key_model_version(options.key_backend),
             "loudness": ModelVersion(name="pyloudnorm", version=_package_version("pyloudnorm")),

@@ -10,7 +10,9 @@ Stages:
   sections, saving, done. Section files: ``sections.detected.json`` always holds the latest
   detector output; ``sections.json`` is what users read and edit, so it is written only when it
   does not exist yet or when ``overwrite_sections=True`` is passed explicitly.
-* ``separate_job``: decoding, separating, saving, done.
+* ``separate_job``: decoding, separating, saving, done. Besides the float WAV stems it stores a
+  compressed preview of each (``stems/preview/<stem>.m4a``) for the studio; previews are optional,
+  so an encoding failure is logged and the job still succeeds with WAV stems only.
 * ``stagepack_job``: loading, packing, saving, done.
 
 Every job also keeps two small markers in the song's storage (only when run by RQ, so the job id
@@ -30,9 +32,17 @@ from typing import Any
 
 from audio_core.analysis import AnalyzeOptions
 from audio_core.analysis import analyze as run_analyze
-from audio_core.constants import MAX_DURATION_SECONDS, MAX_DURATION_TOLERANCE_SECONDS
-from audio_core.io import decode, duration_seconds, probe_duration
-from audio_core.models import Analysis, Sections, StagePackOptions, StemSet
+from audio_core.constants import (
+    DURATION_LIMIT_CODE,
+    MAX_DURATION_PROBE_SLACK_SECONDS,
+    MAX_DURATION_SECONDS,
+    MAX_DURATION_TOLERANCE_SECONDS,
+    PREVIEW_BITRATE_KBPS,
+    PREVIEW_EXTENSION,
+    PREVIEW_PRIMING_SAMPLES,
+)
+from audio_core.io import DecodeError, decode, duration_seconds, encode_preview, probe_duration
+from audio_core.models import Analysis, PreviewInfo, Sections, StagePackOptions, StemSet
 from audio_core.sections import detect_sections, sections_model_version
 from audio_core.separation import DEFAULT_MODEL
 from audio_core.separation import separate as run_separate
@@ -111,29 +121,28 @@ def _source_name(storage: Storage, song_id: str) -> str:
     return names[0]
 
 
-def _mmss(seconds: float) -> str:
-    total = int(seconds)
-    return f"{total // 60}:{total % 60:02d}"
-
-
 def _check_duration(seconds: float) -> None:
-    """Reject a song longer than the product maximum with a user-facing Spanish message."""
+    """Reject a song longer than the product maximum.
+
+    The message is a stable code the web maps to its own wording:
+    ``DURATION_LIMIT:<song seconds>:<maximum seconds>`` (whole seconds).
+    """
     if seconds > MAX_DURATION_SECONDS + MAX_DURATION_TOLERANCE_SECONDS:
-        raise JobError(
-            f"El tema dura {_mmss(seconds)} y el máximo es {_mmss(MAX_DURATION_SECONDS)}."
-        )
+        raise JobError(f"{DURATION_LIMIT_CODE}:{int(seconds)}:{MAX_DURATION_SECONDS}")
 
 
 def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, str]:
     name = _source_name(storage, song_id)
     local = workdir / name
     storage.get_file(song_id, name, local)
-    # Cheap container check first, so an over-long file is never decoded into memory.
+    # Cheap container check first, so an over-long file is never decoded into memory. The
+    # container duration of a VBR file can overestimate by a few seconds, so only a probe clearly
+    # over the limit rejects here; a borderline one is decoded and decided on its exact length.
     probed = probe_duration(local)
-    if probed is not None:
+    if probed is not None and probed > MAX_DURATION_SECONDS + MAX_DURATION_PROBE_SLACK_SECONDS:
         _check_duration(probed)
     audio = decode(local)
-    # ffprobe failed or lied (missing or wrong container duration): the decoded length decides.
+    # Borderline or missing/wrong container duration: the decoded length decides.
     _check_duration(duration_seconds(audio))
     return audio, name
 
@@ -194,6 +203,33 @@ def analyze_job(
     }
 
 
+PREVIEW_DIR = "preview"
+
+
+def _write_previews(result: StemSet, stems_dir: Path) -> None:
+    """Encode a compressed preview per stem and record them in ``result``.
+
+    All or nothing: if any stem fails to encode, no preview is kept and the stem set stays as it
+    was (the studio then falls back to the WAV stems).
+    """
+    written: list[Path] = []
+    try:
+        for stem in result.stems:
+            target = stems_dir / PREVIEW_DIR / f"{stem.name}{PREVIEW_EXTENSION}"
+            encode_preview(stems_dir / stem.path, target)
+            written.append(target)
+    except DecodeError:
+        log.warning("preview encoding failed; storing WAV stems only", exc_info=True)
+        for path in written:
+            path.unlink(missing_ok=True)
+        return
+    for stem in result.stems:
+        stem.preview = f"{PREVIEW_DIR}/{stem.name}{PREVIEW_EXTENSION}"
+    result.preview = PreviewInfo(
+        bitrate_kbps=PREVIEW_BITRATE_KBPS, priming_samples=PREVIEW_PRIMING_SAMPLES
+    )
+
+
 @tracked
 def separate_job(song_id: str, model: str = DEFAULT_MODEL, source_name: str | None = None) -> dict:
     """Separate the stored source into stems stored under ``stems/`` with ``stemset.json``."""
@@ -207,16 +243,21 @@ def separate_job(song_id: str, model: str = DEFAULT_MODEL, source_name: str | No
         result = run_separate(
             audio, source_name or stored_name, model=model, out_dir=stems_dir, device="cpu"
         )
+        set_stage("previews")
+        _write_previews(result, stems_dir)
         (stems_dir / "stemset.json").write_text(result.model_dump_json(indent=2), "utf-8")
         set_stage("saving")
         for stem in result.stems:
             storage.put_file(song_id, f"{STEMS_PREFIX}{stem.path}", stems_dir / stem.path)
+            if stem.preview:
+                storage.put_file(song_id, f"{STEMS_PREFIX}{stem.preview}", stems_dir / stem.preview)
         storage.put_file(song_id, STEMSET, stems_dir / "stemset.json")
     set_stage("done")
     return {
         "song_id": song_id,
         "model": result.model.name,
         "stems": [stem.name for stem in result.stems],
+        "previews": result.preview is not None,
     }
 
 

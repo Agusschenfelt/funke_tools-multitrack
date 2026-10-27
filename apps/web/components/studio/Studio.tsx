@@ -16,7 +16,8 @@ import { StudioEngine, type LoadFailure } from "@/lib/audio/engine";
 import { beatsPerBar } from "@/lib/audio/grid";
 import { stemGains } from "@/lib/audio/mix";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
-import { orderStems } from "@/lib/audio/stems";
+import { orderStems, studioSources } from "@/lib/audio/stems";
+import { formatBytes } from "@/lib/format";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
 import { Lane } from "./Lane";
@@ -161,6 +162,7 @@ interface BodyProps {
  */
 function StudioBody(props: BodyProps) {
   const { song } = props;
+  const studio = useMemo(() => studioSources(song.artifacts), [song]);
   const [engine, setEngine] = useState<StudioEngine | null>(null);
 
   useEffect(() => {
@@ -169,7 +171,7 @@ function StudioBody(props: BodyProps) {
     // Publishing an external resource created by this effect; it cannot be created during render.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEngine(next);
-    next.load(orderStems(song.artifacts.stems), controller.signal).catch(() => {
+    next.load(studio.sources, controller.signal).catch(() => {
       // load() reports its own failures through the engine state; this only keeps a bug from
       // surfacing as an unhandled rejection.
       if (!controller.signal.aborted) next.reportFailure("network");
@@ -179,7 +181,7 @@ function StudioBody(props: BodyProps) {
       next.dispose();
       setEngine(null);
     };
-  }, [song]);
+  }, [studio]);
 
   if (!engine) {
     return (
@@ -188,11 +190,12 @@ function StudioBody(props: BodyProps) {
       </p>
     );
   }
-  return <StudioStage engine={engine} {...props} />;
+  return <StudioStage engine={engine} compressed={studio.compressed} {...props} />;
 }
 
 function StudioStage({
   engine,
+  compressed,
   songId,
   song,
   analysis,
@@ -200,7 +203,7 @@ function StudioStage({
   source,
   edited,
   onReload,
-}: BodyProps & { engine: StudioEngine }) {
+}: BodyProps & { engine: StudioEngine; compressed: boolean }) {
   const state = useEngineState(engine);
 
   const grid = analysis.grid;
@@ -277,6 +280,7 @@ function StudioStage({
     void engine.play();
   };
   const loadedCount = names.filter((name) => state.stems[name].phase === "ready").length;
+  const downloaded = names.reduce((sum, name) => sum + state.stems[name].loaded, 0);
 
   return (
     <>
@@ -303,6 +307,13 @@ function StudioStage({
         {state.status === "ready" ? "Pistas listas" : ""}
       </p>
 
+      {state.status === "ready" && downloaded > 0 && (
+        <p className={styles.sizeNote}>
+          {compressed ? "Vista previa comprimida" : "Pistas sin comprimir"}: {formatBytes(downloaded)}{" "}
+          descargados. El pack exportado conserva la calidad completa.
+        </p>
+      )}
+
       <div className={styles.stage}>
         <SectionToolbar
           sectionCount={sections.length}
@@ -319,6 +330,7 @@ function StudioStage({
           engine={engine}
           sections={sections}
           downbeats={downbeats}
+          estimatedUntil={grid?.extrapolated_until ?? null}
           duration={duration}
           activeIndex={activeIndex}
           selected={editor.selected}

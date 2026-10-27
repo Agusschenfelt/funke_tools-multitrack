@@ -1,4 +1,4 @@
-import { API_URL, type ArtifactLink } from "@/lib/api";
+import { API_URL, type ArtifactLink, type Artifacts } from "@/lib/api";
 
 /** Lane order: rhythm section first, voice last. */
 export const STEM_ORDER = ["drums", "bass", "piano", "guitar", "other", "vocals"] as const;
@@ -13,9 +13,21 @@ export const STEM_LABEL: Record<StemName, string> = {
   vocals: "Voz",
 };
 
+/** What a compressed preview needs to line up with the WAV stem it stands for. */
+export interface PreviewAlignment {
+  /** Exact sample count of the WAV stems. */
+  samples: number;
+  /** Encoder delay at the start of the preview when the decoder does not hide it. */
+  primingSamples: number;
+  /** Sample rate `samples` and `primingSamples` are counted in (the stemset's, not the context's). */
+  sampleRate: number;
+}
+
 export interface StemSource {
   name: StemName;
   url: string;
+  /** Set for compressed previews; absent for the lossless WAV stems. */
+  alignment?: PreviewAlignment;
 }
 
 /** `drums.wav` -> `drums`; null for anything that is not one of the six stems. */
@@ -40,4 +52,36 @@ export function orderStems(links: readonly ArtifactLink[]): StemSource[] {
     name,
     url: found.get(name) as string,
   }));
+}
+
+export interface StudioSources {
+  sources: StemSource[];
+  /** True when the sources are the compressed previews. */
+  compressed: boolean;
+}
+
+/**
+ * The files the studio downloads: the compressed previews when the song has one for every stem
+ * and says how they line up, the WAV stems otherwise (songs separated before previews existed).
+ */
+export function studioSources(
+  artifacts: Pick<Artifacts, "stems" | "previews" | "preview">,
+): StudioSources {
+  const wavs = orderStems(artifacts.stems);
+  const meta = artifacts.preview;
+  if (meta && artifacts.previews?.length) {
+    const previews = new Map(orderStems(artifacts.previews).map((s) => [s.name, s.url]));
+    if (wavs.length > 0 && wavs.every((s) => previews.has(s.name))) {
+      const alignment = {
+        samples: meta.samples,
+        primingSamples: meta.priming_samples,
+        sampleRate: meta.sample_rate,
+      };
+      return {
+        sources: wavs.map((s) => ({ name: s.name, url: previews.get(s.name) as string, alignment })),
+        compressed: true,
+      };
+    }
+  }
+  return { sources: wavs, compressed: false };
 }

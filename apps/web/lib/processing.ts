@@ -3,6 +3,7 @@
  * failure messages and the songbook line of detected sections. No React, no fetch.
  */
 import type { JobKind, JobOut, JobStatus, Section } from "@/lib/api";
+import { tooLongMessage } from "@/lib/upload";
 
 /* -------------------------------------------------------------- polling */
 
@@ -27,6 +28,7 @@ const STAGES: Record<string, string> = {
   analyzing: "Tempo y tonalidad",
   sections: "Secciones",
   separating: "Separando pistas",
+  previews: "Comprimiendo vista previa",
   loading: "Cargando pistas",
   packing: "Armando el pack",
   saving: "Guardando",
@@ -56,9 +58,9 @@ export const TASK_LABEL: Record<Exclude<JobKind, "stagepack">, string> = {
 
 /** Plain-Spanish reason for a failed job; the raw server text stays out of the UI. */
 export function failureMessage(kind: Exclude<JobKind, "stagepack">, error: string | null): string {
-  // The worker's own Spanish message for an over-long song is already user-facing: show it as is.
-  const tooLong = (error ?? "").match(/El tema dura \d+:\d{2} y el máximo es \d+:\d{2}\./);
-  if (tooLong) return tooLong[0];
+  // The worker reports an over-long song as `DURATION_LIMIT:<seconds>:<maximum seconds>`.
+  const tooLong = (error ?? "").match(/\bDURATION_LIMIT:(\d+):(\d+)/);
+  if (tooLong) return tooLongMessage(Number(tooLong[1]), Number(tooLong[2]));
   const text = (error ?? "").toLowerCase();
   if (/out of memory|\boom\b|memory|killed/.test(text)) {
     return "El servidor se quedó sin memoria con este archivo. Probá con un archivo más corto.";

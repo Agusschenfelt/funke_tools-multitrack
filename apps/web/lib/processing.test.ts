@@ -47,6 +47,7 @@ describe("status and stage mapping", () => {
   it("translates every known stage and hides unknown ones", () => {
     expect(stageLabel("decoding")).toBe("Leyendo audio");
     expect(stageLabel("separating")).toBe("Separando pistas");
+    expect(stageLabel("previews")).toBe("Comprimiendo vista previa");
     expect(stageLabel("done")).toBe("Listo");
     expect(stageLabel("whatever")).toBe("—");
     expect(stageLabel(null)).toBe("—");
@@ -63,8 +64,12 @@ describe("status and stage mapping", () => {
     expect(failureMessage("separate", "torch.OutOfMemoryError: out of memory")).toMatch(/memoria/);
     expect(failureMessage("analyze", "ffmpeg: Invalid data found")).toMatch(/leer el audio/);
     expect(
-      failureMessage("analyze", "worker_cpu.jobs.JobError: El tema dura 23:41 y el máximo es 10:00."),
-    ).toBe("El tema dura 23:41 y el máximo es 10:00.");
+      failureMessage("analyze", "worker_cpu.jobs.JobError: DURATION_LIMIT:1421:600"),
+    ).toBe("Este tema dura 23:41. El máximo es 10 minutos.");
+    // The Spanish sentence is no longer parsed: without the code it is a generic failure.
+    expect(failureMessage("analyze", "El tema dura 23:41 y el máximo es 10:00.")).toBe(
+      "El análisis falló.",
+    );
     expect(failureMessage("analyze", null)).toBe("El análisis falló.");
     expect(failureMessage("separate", "boom")).toBe("La separación falló.");
   });

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { formatBytes } from "./format";
-import { ACCEPT, checkDuration, extensionOf, tooLongMessage, validateFile } from "./upload";
+import {
+  ACCEPT,
+  BROWSER_ESTIMATE_SLACK_SECONDS,
+  MAX_DURATION_SECONDS,
+  checkDuration,
+  extensionOf,
+  limitLabel,
+  tooLongMessage,
+  validateFile,
+} from "./upload";
 
 const MB = 1024 * 1024;
 
@@ -59,17 +68,23 @@ describe("checkDuration", () => {
     expect(checkDuration(null)).toEqual({ ok: true });
     expect(checkDuration(Number.NaN)).toEqual({ ok: true });
   });
-  it("accepts up to 10 minutes, with the worker's half-second tolerance", () => {
+  it("accepts up to the limit plus the browser's estimate slack", () => {
     expect(checkDuration(180)).toEqual({ ok: true });
-    expect(checkDuration(600)).toEqual({ ok: true });
-    expect(checkDuration(600.5)).toEqual({ ok: true });
+    expect(checkDuration(MAX_DURATION_SECONDS)).toEqual({ ok: true });
+    expect(checkDuration(MAX_DURATION_SECONDS + BROWSER_ESTIMATE_SLACK_SECONDS)).toEqual({ ok: true });
   });
-  it("blocks a longer song with the duration in the message", () => {
-    expect(checkDuration(601)).toEqual({
+  it("blocks a clearly longer song with the duration in the message", () => {
+    const seconds = MAX_DURATION_SECONDS + BROWSER_ESTIMATE_SLACK_SECONDS + 1;
+    expect(checkDuration(seconds)).toEqual({
       ok: false,
       code: "duration",
-      message: "Este tema dura 10:01. El máximo es 10 minutos.",
+      message: "Este tema dura 10:03. El máximo es 10 minutos.",
     });
+  });
+  it("derives the limit text from the limit", () => {
+    expect(checkDuration(200, 120)).toMatchObject({ message: "Este tema dura 3:20. El máximo es 2 minutos." });
+    expect(limitLabel(60)).toBe("1 minuto");
+    expect(limitLabel(90)).toBe("1:30 minutos");
   });
 });
 

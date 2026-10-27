@@ -17,6 +17,7 @@ export interface ExportOptions {
   straightGrid: boolean;
   sampleRate: 44100 | 48000;
   includeVocals: boolean;
+  extendGrid: boolean;
   language: "es" | "en";
 }
 
@@ -29,6 +30,7 @@ export const DEFAULT_OPTIONS: ExportOptions = {
   straightGrid: false,
   sampleRate: 44100,
   includeVocals: false,
+  extendGrid: true,
   language: "es",
 };
 
@@ -42,6 +44,7 @@ export function toApiBody(o: ExportOptions): Required<StagePackOptions> {
     straight_grid: o.straightGrid,
     sample_rate: o.sampleRate,
     include_vocals: o.includeVocals,
+    extend_grid: o.extendGrid,
     language: o.language,
   };
 }
@@ -61,6 +64,7 @@ export function parseOptions(raw: unknown): ExportOptions {
     straightGrid: typeof o.straightGrid === "boolean" ? o.straightGrid : d.straightGrid,
     sampleRate: pick(o.sampleRate, [44100, 48000], d.sampleRate),
     includeVocals: typeof o.includeVocals === "boolean" ? o.includeVocals : d.includeVocals,
+    extendGrid: typeof o.extendGrid === "boolean" ? o.extendGrid : d.extendGrid,
     language: pick(o.language, ["es", "en"], d.language),
   };
 }

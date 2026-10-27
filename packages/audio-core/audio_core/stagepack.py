@@ -26,6 +26,7 @@ from pydantic import ValidationError
 
 from audio_core.click import click_events, render_click
 from audio_core.constants import DTYPE, SAMPLE_RATE
+from audio_core.gridfix import drop_extrapolated
 from audio_core.guide import (
     CueLibrary,
     CueLibraryError,
@@ -365,10 +366,11 @@ def build_stagepack(
     """Build the Stage Pack ZIP in ``out_dir`` and return its path and report."""
     if analysis.grid is None or not analysis.grid.downbeats or len(analysis.grid.beats) < 2:
         raise StagePackError("analysis has no usable beat grid (beats and downbeats are required)")
+    grid = analysis.grid if options.extend_grid else drop_extrapolated(analysis.grid)
     stems = load_stems(stemset, Path(stems_dir))
     original_samples = next(iter(stems.values())).shape[1]
     try:
-        timeline = build_timeline(analysis.grid, options.count_in_bars, SAMPLE_RATE)
+        timeline = build_timeline(grid, options.count_in_bars, SAMPLE_RATE)
     except TimelineError as exc:
         raise StagePackError(f"cannot build the count-in timeline: {exc}") from exc
 
@@ -441,7 +443,7 @@ def build_stagepack(
                 secciones_text(timeline, sections, options.language).encode("utf-8"),
             )
             midi_path = Path(tmp) / "Tempo.mid"
-            tempo_map(timeline, analysis.grid, sections).save(str(midi_path))
+            tempo_map(timeline, grid, sections).save(str(midi_path))
             archive.write(midi_path, "Tempo.mid")
             archive.writestr("Cómo importar.txt", notes.encode("utf-8"))
             archive.writestr("stagepack.json", json.dumps(report, indent=2, ensure_ascii=False))

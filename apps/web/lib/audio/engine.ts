@@ -28,9 +28,10 @@ import {
   decodeStemBytes,
   fetchStemBytes,
   loadStems,
+  previewWindow,
   type LoadFailure,
 } from "./stemLoad";
-import { STEM_ORDER, type StemName, type StemSource } from "./stems";
+import { STEM_ORDER, type PreviewAlignment, type StemName, type StemSource } from "./stems";
 
 export type { LoadFailure } from "./stemLoad";
 
@@ -115,6 +116,17 @@ function initialState(): EngineState {
     cueLanguage: "es",
     cuesStatus: "idle",
   };
+}
+
+/** Cuts a decoded preview so it starts at the same sample as its WAV stem (see `previewWindow`). */
+function alignPreview(ctx: AudioContext, buffer: AudioBuffer, alignment: PreviewAlignment): AudioBuffer {
+  const { start, length } = previewWindow(buffer.length, alignment, buffer.sampleRate);
+  if (start === 0 && length === buffer.length) return buffer;
+  const aligned = ctx.createBuffer(buffer.numberOfChannels, length, buffer.sampleRate);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+    aligned.copyToChannel(buffer.getChannelData(channel).subarray(start, start + length), channel);
+  }
+  return aligned;
 }
 
 function stop(node: AudioBufferSourceNode) {
@@ -269,13 +281,15 @@ export class StudioEngine {
     this.pausedAt = 0;
   }
 
-  private async loadStem(ctx: AudioContext, { name, url }: StemSource, signal: AbortSignal) {
+  private async loadStem(ctx: AudioContext, source: StemSource, signal: AbortSignal) {
+    const { name, url, alignment } = source;
     this.setStem(name, { phase: "downloading", loaded: 0, failure: null });
     const bytes = await fetchStemBytes(url, signal, (loaded) => this.setStem(name, { loaded }));
     if (signal.aborted) return;
     this.setStem(name, { phase: "decoding" });
-    const buffer = await decodeStemBytes((data) => ctx.decodeAudioData(data), bytes);
+    let buffer = await decodeStemBytes((data) => ctx.decodeAudioData(data), bytes);
     if (signal.aborted) return;
+    if (alignment) buffer = alignPreview(ctx, buffer, alignment);
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
       buffer.getChannelData(i),
     );

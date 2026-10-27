@@ -151,6 +151,24 @@ def test_pack_starts_at_sample_zero_with_the_count_in(inputs: Inputs) -> None:
     assert drums[:, SAMPLE_RATE + 1000 :].any()
 
 
+def test_extend_grid_toggles_the_extrapolated_start(inputs: Inputs) -> None:
+    beats = [i * 0.5 for i in range(15)]
+    inputs.analysis.grid = Grid(
+        bpm=120,
+        beats=beats,
+        downbeats=beats[::4],
+        time_signature="4/4",
+        extrapolated_until=4.0,
+    )
+    extended = inputs.build()
+    plain = inputs.build(extend_grid=False)
+    # Extended: the first (estimated) downbeat is at t=0, so the count-in needs a 2 s pad.
+    assert extended.report["pad_samples"] == 2 * SAMPLE_RATE
+    # Old behaviour: the count-in ends on the first detected downbeat (t=4 s), no pad.
+    assert plain.report["pad_samples"] == 0
+    assert plain.report["options"]["extend_grid"] is False
+
+
 def test_split_channels_follow_click_guide_and_band(inputs: Inputs) -> None:
     result = inputs.build(destination="playback")
     with zipfile.ZipFile(result.zip_path) as archive:

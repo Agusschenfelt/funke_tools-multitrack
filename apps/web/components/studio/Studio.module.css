@@ -178,3 +178,9 @@
     font-size: var(--text-base);
   }
 }
+
+.sizeNote {
+  margin: var(--space-2) 0 var(--space-3);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}

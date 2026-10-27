@@ -30,11 +30,22 @@ class ArtifactLink(BaseModel):
     token_expires_at: datetime
 
 
+class PreviewMeta(BaseModel):
+    """What a client needs to line previews up with the WAV stems (from ``stemset.json``)."""
+
+    samples: int
+    sample_rate: int
+    priming_samples: int
+
+
 class Artifacts(BaseModel):
     analysis: bool
     sections: bool
     sections_edited: bool
     stems: list[ArtifactLink]
+    # Compressed stems for the studio; empty (and ``preview`` null) for songs separated before them.
+    previews: list[ArtifactLink] = Field(default_factory=list)
+    preview: PreviewMeta | None = None
     packs: list[ArtifactLink]
 
 

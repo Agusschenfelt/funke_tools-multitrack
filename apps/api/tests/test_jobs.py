@@ -82,7 +82,12 @@ def test_stagepack_enqueues_options(client, queue, store, song):
     put_analysis_and_stems(store, song["id"])
     response = client.post(
         f"/songs/{song['id']}/stagepack",
-        json={"destination": "playback", "count_in_bars": 2, "click_sound": "cowbell"},
+        json={
+            "destination": "playback",
+            "count_in_bars": 2,
+            "click_sound": "cowbell",
+            "extend_grid": False,
+        },
     )
 
     assert response.status_code == 202
@@ -94,6 +99,7 @@ def test_stagepack_enqueues_options(client, queue, store, song):
     assert options["count_in_bars"] == 2
     assert options["click_sound"] == "cowbell"
     assert options["language"] == "es"
+    assert options["extend_grid"] is False
     assert call["kwargs"] == {}
 
 

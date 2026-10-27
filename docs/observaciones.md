@@ -14,7 +14,7 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 ## Prueba de la v1 con el equipo
 
-La v1 está publicada en https://tool.example.com (VPS compartida, con un techo de 2 núcleos y 5 GB para la tool). Cada tema se procesa de a uno; un tema de 4 minutos tarda varios minutos.
+La v1 está publicada en https://tool.example.com (VPS compartida, con un techo de 2 núcleos y 5 GB para la tool). Cada tema se procesa de a uno. En la VPS la separación tarda ~1,5 s por segundo de audio (un tema de 4 minutos, unos 6 minutos), y el estudio descarga stems comprimidos de ~3 MB cada uno.
 
 Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durante el desarrollo.
 
