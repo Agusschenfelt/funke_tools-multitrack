@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   describeError,
@@ -19,12 +19,13 @@ import { stemGains } from "@/lib/audio/mix";
 import { loadPans, savePans } from "@/lib/audio/panStore";
 import { detectPreset } from "@/lib/audio/presets";
 import { buildClickEvents, cuePlacements } from "@/lib/audio/schedule";
-import { orderStems, studioSources } from "@/lib/audio/stems";
+import { orderStems, STEM_LABEL, studioSources } from "@/lib/audio/stems";
 import { formatBytes } from "@/lib/format";
 import { buildStrip, flatIndex, locateActive, titleFromFilename } from "@/lib/strip";
 import { useEngineState, useFrame } from "./hooks";
 import { Lane } from "./Lane";
 import { MixBar } from "./MixBar";
+import { MixExport } from "./MixExport";
 import { SectionEditor, SectionToolbar } from "./SectionPanel";
 import { SectionStrip } from "./SectionStrip";
 import { SongBar } from "./SongBar";
@@ -274,6 +275,13 @@ function StudioStage({
   }, [engine]);
 
   const gains = stemGains(state.mix);
+  const [ruler, setRuler] = useState<"bars" | "time">(hasGrid ? "bars" : "time");
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportId = useId();
+  const wavs = useMemo(() => orderStems(song.artifacts.stems), [song]);
+  const wavUrl = useMemo(() => new Map(wavs.map((s) => [s.name, s.url])), [wavs]);
+  const title = titleFromFilename(song.filename);
+  const silent = names.every((name) => gains[name] === 0);
   const preset = detectPreset(state.mix, state.order);
 
   // Pans are remembered per song: restored once the lanes exist, saved on every change after that.
@@ -313,7 +321,7 @@ function StudioStage({
     <>
       <SongBar
         songId={songId}
-        title={titleFromFilename(song.filename)}
+        title={title}
         analysis={analysis}
         dirty={editor.dirty}
         saving={editor.saving}
@@ -360,6 +368,7 @@ function StudioStage({
           estimatedUntil={grid?.extrapolated_until ?? null}
           duration={duration}
           loop={state.loop}
+          ruler={ruler}
           activeIndex={activeIndex}
           selected={editor.selected}
           editedOnServer={editor.editedOnServer}
@@ -395,7 +404,25 @@ function StudioStage({
             if (range) engine.setLoop(range);
           }}
           onClearLoop={() => engine.clearLoop()}
+          ruler={ruler}
+          onRuler={setRuler}
+          exportOpen={exportOpen}
+          onToggleExport={() => setExportOpen((open) => !open)}
+          exportId={exportId}
         />
+        {exportOpen && (
+          <MixExport
+            id={exportId}
+            engine={engine}
+            title={title}
+            duration={duration}
+            compressed={compressed}
+            wavSources={wavs}
+            hasGrid={hasGrid}
+            silent={silent}
+            ready={state.status === "ready"}
+          />
+        )}
         <div className={lanes.lanes}>
           {names.map((name, index) => (
             <Lane
@@ -408,6 +435,8 @@ function StudioStage({
               duration={duration}
               activeSpan={activeSpan}
               loop={state.loop}
+              downloadUrl={wavUrl.get(name)}
+              downloadName={`${title} - ${STEM_LABEL[name]}.wav`}
               index={index}
               count={names.length}
             />

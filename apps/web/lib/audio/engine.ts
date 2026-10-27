@@ -19,6 +19,15 @@ import { clickWave } from "./click";
 import { clampPan, DEFAULT_MIX, stemGains, type StemMix } from "./mix";
 import { applyPresetToMix, type PresetId } from "./presets";
 import { inLoop, normalizeLoop, songPositionAt, windowSegments, type LoopRange } from "./loop";
+import {
+  encodeWav,
+  guardDb,
+  levelGuard,
+  mixdownStems,
+  peakOf,
+  renderMixdown,
+  type BitDepth,
+} from "./mixdown";
 import { bucketCount, computePeaks, type Peaks } from "./peaks";
 import {
   eventsInWindow,
@@ -71,6 +80,30 @@ export interface EngineState {
   cuesStatus: "idle" | "loading" | "ready" | "error";
   /** Section A-B being repeated, or null. Playback never leaves it while it is set. */
   loop: LoopRange | null;
+}
+
+export interface MixExportOptions {
+  bitDepth: BitDepth;
+  includeClick: boolean;
+  includeCues: boolean;
+  /** WAV stems to download and use instead of what the studio has loaded (full quality). */
+  fullQuality?: readonly StemSource[];
+  onProgress?: (progress: { phase: "download" | "mix" | "encode"; fraction: number }) => void;
+  signal?: AbortSignal;
+}
+
+export interface MixExport {
+  blob: Blob;
+  seconds: number;
+  /** dB the level guard took off to keep the summed stems from clipping; 0 when it did nothing. */
+  reducedDb: number;
+}
+
+/** Why a mix could not be exported (cancelling rejects with an AbortError instead). */
+export class MixExportError extends Error {
+  constructor(readonly kind: "notReady" | "download" | "decode" | "cues" | "render") {
+    super(`mix export failed: ${kind}`);
+  }
 }
 
 export interface EngineTimeline {
@@ -579,6 +612,86 @@ export class StudioEngine {
   }
   toggleSolo(name: StemName) {
     this.setMix(name, { solo: !this.state.mix[name].solo });
+  }
+
+  /* ----------------------------------------------------------- export */
+
+  /**
+   * Renders the current mix (gains, mutes, solos, pans; no loop) offline into a WAV. Uses the
+   * loaded buffers, or downloads `fullQuality` sources first when the studio holds previews.
+   */
+  async exportMix(options: MixExportOptions): Promise<MixExport> {
+    const { bitDepth, signal } = options;
+    const report = options.onProgress ?? (() => {});
+    const aborted = () => new DOMException("Export cancelled", "AbortError");
+    if (this.disposed || this.state.status !== "ready") throw new MixExportError("notReady");
+    const ctx = this.ensureContext();
+    const abort = signal ?? new AbortController().signal;
+
+    let source: ReadonlyMap<StemName, AudioBuffer> = this.buffers;
+    if (options.fullQuality?.length) {
+      const full = new Map<StemName, AudioBuffer>();
+      let done = 0;
+      report({ phase: "download", fraction: 0 });
+      for (const wav of options.fullQuality) {
+        if (abort.aborted) throw aborted();
+        try {
+          const bytes = await fetchStemBytes(wav.url, abort, () => {});
+          full.set(wav.name, await decodeStemBytes((data) => ctx.decodeAudioData(data), bytes));
+        } catch (error) {
+          if (abort.aborted) throw aborted();
+          const failure = (error as { failure?: LoadFailure }).failure;
+          throw new MixExportError(failure === "decode" ? "decode" : "download");
+        }
+        done += 1;
+        report({ phase: "download", fraction: done / options.fullQuality.length });
+      }
+      source = full;
+    }
+    if (abort.aborted) throw aborted();
+
+    const stems = mixdownStems(this.state.order, this.state.mix, source);
+    let frames = 0;
+    for (const buffer of source.values()) frames = Math.max(frames, buffer.length);
+    const sampleRate = source.values().next().value?.sampleRate ?? ctx.sampleRate;
+
+    let cues: Parameters<typeof renderMixdown>[0]["cues"];
+    if (options.includeCues && this.timeline.cues.length > 0) {
+      await this.loadCues(this.state.cueLanguage);
+      const library = this.cueLibrary.get(this.state.cueLanguage);
+      if (!library) throw new MixExportError("cues");
+      cues = { library, placements: this.timeline.cues };
+    }
+    const click =
+      options.includeClick && this.clickBuffers
+        ? { buffers: this.clickBuffers, events: this.timeline.clicks }
+        : undefined;
+
+    let rendered: Awaited<ReturnType<typeof renderMixdown>>;
+    try {
+      rendered = await renderMixdown({
+        stems,
+        length: frames,
+        sampleRate,
+        click,
+        cues,
+        signal: abort,
+        onProgress: (fraction) => report({ phase: "mix", fraction }),
+      });
+    } catch (error) {
+      if (abort.aborted || (error as { name?: string }).name === "AbortError") throw aborted();
+      throw new MixExportError("render");
+    }
+
+    report({ phase: "encode", fraction: 0 });
+    const scale = levelGuard(peakOf(rendered.channels));
+    const wav = encodeWav(rendered.channels, rendered.sampleRate, bitDepth, scale);
+    report({ phase: "encode", fraction: 1 });
+    return {
+      blob: new Blob([wav], { type: "audio/wav" }),
+      seconds: frames / rendered.sampleRate,
+      reducedDb: guardDb(scale),
+    };
   }
 
   /* ------------------------------------------------------ click, cues */

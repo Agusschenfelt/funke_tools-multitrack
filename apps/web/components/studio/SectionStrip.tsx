@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from
 import type { Section } from "@/lib/api";
 import type { StudioEngine } from "@/lib/audio/engine";
 import type { LoopRange } from "@/lib/audio/loop";
+import { timeTicks } from "@/lib/audio/ruler";
 import { barAt, moveBoundary, needsReview } from "@/lib/sections/edit";
 import { barTicks, buildStrip, DEFAULT_MIN_GAP_PX, stripItems } from "@/lib/strip";
 import { useWidth } from "./hooks";
@@ -25,6 +26,8 @@ interface SectionStripProps {
   duration: number;
   /** Section being repeated, drawn behind the ruler and the lanes. */
   loop?: LoopRange | null;
+  /** What the ruler counts: bar numbers or m:ss. */
+  ruler?: "bars" | "time";
   /** Flat index of the section under the playhead. */
   activeIndex: number | null;
   selected: number | null;
@@ -48,6 +51,7 @@ export function SectionStrip({
   estimatedUntil = null,
   duration,
   loop = null,
+  ruler = "bars",
   activeIndex,
   selected,
   editedOnServer,
@@ -82,6 +86,7 @@ export function SectionStrip({
       ),
     [downbeats, duration, width, groups, estimatedUntil],
   );
+  const clockTicks = useMemo(() => timeTicks(duration, width), [duration, width]);
   const pct = (seconds: number) => `${(seconds / duration) * 100}%`;
   const canMove = downbeats.length > 0;
 
@@ -226,7 +231,7 @@ export function SectionStrip({
           title="Arrastrá para repetir un tramo (Alt: sin ajustar a compases)"
           {...loopSelect.handlers}
         >
-          {duration > 0 && estimatedUntil ? (
+          {duration > 0 && ruler === "bars" && estimatedUntil ? (
             <span
               className={styles.estimated}
               style={{ width: pct(Math.min(estimatedUntil, duration)) }}
@@ -234,6 +239,14 @@ export function SectionStrip({
             />
           ) : null}
           {duration > 0 &&
+            ruler === "time" &&
+            clockTicks.map((tick) => (
+              <span key={tick.time} className={`${styles.bar} ${styles.barClock} mono`} style={{ left: pct(tick.time) }}>
+                {tick.label}
+              </span>
+            ))}
+          {duration > 0 &&
+            ruler === "bars" &&
             ticks.map((tick) => (
               <span
                 key={tick.bar}

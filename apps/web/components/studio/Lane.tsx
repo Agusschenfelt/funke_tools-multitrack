@@ -23,6 +23,10 @@ interface LaneProps {
   duration: number;
   activeSpan: StripSpan | null;
   loop: LoopRange | null;
+  /** Signed link to the full-quality WAV of this stem; absent when the song has none. */
+  downloadUrl?: string;
+  /** File name offered by the browser. */
+  downloadName?: string;
   index: number;
   count: number;
 }
@@ -64,17 +68,13 @@ function PanControl({ engine, name, label, pan }: { engine: StudioEngine; name: 
         className={styles.panSlider}
         min={-1}
         max={1}
-        step={0.05}
+        step={0.1}
         value={pan}
         aria-label={`Paneo de ${label}`}
         aria-valuetext={panText(pan)}
         aria-keyshortcuts="Enter"
         title="Doble clic o Enter para centrar"
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          // A small detent so the centre is easy to land on.
-          engine.setPan(name, Math.abs(next) < 0.08 ? 0 : next);
-        }}
+        onChange={(event) => engine.setPan(name, Number(event.target.value))}
         onDoubleClick={centre}
         onKeyDown={onKeyDown}
       />
@@ -94,6 +94,8 @@ export function Lane({
   duration,
   activeSpan,
   loop,
+  downloadUrl,
+  downloadName,
   index,
   count,
 }: LaneProps) {
@@ -125,6 +127,25 @@ export function Lane({
           >
             S
           </button>
+          {downloadUrl && (
+            <a
+              className={styles.toggle}
+              href={downloadUrl}
+              download={downloadName}
+              aria-label={`Descargar ${label} (WAV)`}
+              title={`Descargar ${label} (WAV)`}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                <path
+                  d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19h14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="square"
+                />
+              </svg>
+            </a>
+          )}
         </div>
         <input
           type="range"

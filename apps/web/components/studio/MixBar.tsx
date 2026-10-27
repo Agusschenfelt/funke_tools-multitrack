@@ -13,6 +13,12 @@ interface MixBarProps {
   canLoopSection: boolean;
   onLoopSection: () => void;
   onClearLoop: () => void;
+  ruler: "bars" | "time";
+  onRuler: (mode: "bars" | "time") => void;
+  exportOpen: boolean;
+  onToggleExport: () => void;
+  /** Id of the export panel, for aria-controls. */
+  exportId: string;
 }
 
 /** Quick mixes above the lanes. "Personalizado" lights up by itself once mute/solo is changed by hand. */
@@ -24,10 +30,15 @@ export function MixBar({
   canLoopSection,
   onLoopSection,
   onClearLoop,
+  ruler,
+  onRuler,
+  exportOpen,
+  onToggleExport,
+  exportId,
 }: MixBarProps) {
   return (
     <div className={styles.bar}>
-      <div className={styles.group} role="group" aria-label="Mezclas rápidas">
+      <div className={`${styles.group} ${styles.presets}`} role="group" aria-label="Mezclas rápidas">
         {PRESETS.map(({ id, label }) => (
           <button
             key={id}
@@ -47,6 +58,35 @@ export function MixBar({
         >
           {CUSTOM_LABEL}
         </span>
+      </div>
+      <div className={styles.tools}>
+        <div className={styles.group} role="group" aria-label="La regla marca">
+          <button
+            type="button"
+            className={styles.segment}
+            aria-pressed={ruler === "bars"}
+            onClick={() => onRuler("bars")}
+          >
+            Compases
+          </button>
+          <button
+            type="button"
+            className={styles.segment}
+            aria-pressed={ruler === "time"}
+            onClick={() => onRuler("time")}
+          >
+            Tiempo
+          </button>
+        </div>
+        <button
+          type="button"
+          className={styles.small}
+          aria-expanded={exportOpen}
+          aria-controls={exportId}
+          onClick={onToggleExport}
+        >
+          Exportar mi mezcla
+        </button>
       </div>
       <div className={styles.loop}>
         {loopLabel ? (

@@ -172,6 +172,10 @@
   line-height: 1.25rem;
 }
 
+.barClock {
+  color: var(--paper-dim);
+}
+
 .barAnchor {
   color: var(--paper);
 }

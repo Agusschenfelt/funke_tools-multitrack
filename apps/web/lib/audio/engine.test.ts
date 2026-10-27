@@ -508,3 +508,122 @@ describe("StudioEngine loop A-B", () => {
     engine.dispose();
   });
 });
+
+describe("StudioEngine.exportMix", () => {
+  class FakeOffline {
+    static last: FakeOffline | null = null;
+    destination = {};
+    sources: FakeSource[] = [];
+    gains: FakeGain[] = [];
+    constructor(
+      public channels: number,
+      public length: number,
+      public sampleRate: number,
+    ) {
+      FakeOffline.last = this;
+    }
+    createBufferSource() {
+      const source = new FakeSource();
+      this.sources.push(source);
+      return source;
+    }
+    createGain() {
+      const gain = new FakeGain();
+      this.gains.push(gain);
+      return gain;
+    }
+    createStereoPanner() {
+      return { pan: { value: 0 }, connect() {} };
+    }
+    async suspend() {}
+    async resume() {}
+    async startRendering() {
+      const loud = new Float32Array(this.length).fill(2);
+      const quiet = new Float32Array(this.length).fill(-0.5);
+      return { numberOfChannels: 2, sampleRate: this.sampleRate, getChannelData: (i: number) => (i ? quiet : loud) };
+    }
+  }
+
+  beforeEach(() => {
+    decodedFrames = 4410;
+    FakeOffline.last = null;
+    vi.stubGlobal("OfflineAudioContext", FakeOffline);
+  });
+
+  it("renders only the audible stems at their gain and returns a WAV", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    engine.toggleMute("drums");
+    engine.setVolume("bass", 0.5);
+    const progress: string[] = [];
+    const result = await engine.exportMix({
+      bitDepth: 16,
+      includeClick: false,
+      includeCues: false,
+      onProgress: ({ phase }) => progress.push(phase),
+    });
+    const offline = FakeOffline.last as FakeOffline;
+    expect(offline.sources).toHaveLength(2);
+    expect(offline.gains.map((g) => g.gain.value)).toEqual([0.5, 1]);
+    expect(offline.length).toBe(4410);
+    expect(result.blob.type).toBe("audio/wav");
+    expect(result.blob.size).toBe(44 + 4410 * 4);
+    // The fake render peaks at 2.0, so the guard took 6 dB off.
+    expect(result.reducedDb).toBeCloseTo(6.02, 2);
+    expect(progress).toContain("mix");
+    expect(progress.at(-1)).toBe("encode");
+    engine.dispose();
+  });
+
+  it("refuses before the stems are ready and stops when cancelled", async () => {
+    const engine = new StudioEngine();
+    await expect(
+      engine.exportMix({ bitDepth: 16, includeClick: false, includeCues: false }),
+    ).rejects.toMatchObject({ kind: "notReady" });
+    await ready(engine);
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      engine.exportMix({ bitDepth: 24, includeClick: false, includeCues: false, signal: abort.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    engine.dispose();
+  });
+
+  it("downloads the WAV stems for full quality and mixes those", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        fetched.push(url);
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      }),
+    );
+    decodedFrames = 8820;
+    await engine.exportMix({
+      bitDepth: 24,
+      includeClick: false,
+      includeCues: false,
+      fullQuality: sources.map((s) => ({ name: s.name, url: `${s.url}.wav` })),
+    });
+    expect(fetched).toEqual(["http://x/drums.wav", "http://x/bass.wav", "http://x/vocals.wav"]);
+    expect((FakeOffline.last as FakeOffline).length).toBe(8820);
+    engine.dispose();
+  });
+
+  it("reports a failed full-quality download as such", async () => {
+    const engine = new StudioEngine();
+    await ready(engine);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 403 })));
+    await expect(
+      engine.exportMix({
+        bitDepth: 16,
+        includeClick: false,
+        includeCues: false,
+        fullQuality: [{ name: "drums", url: "http://x/drums.wav" }],
+      }),
+    ).rejects.toMatchObject({ kind: "download" });
+    engine.dispose();
+  });
+});
