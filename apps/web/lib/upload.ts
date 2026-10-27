@@ -62,3 +62,59 @@ export function validateFile(
   }
   return { ok: true };
 }
+
+/** Longest accepted song. Mirrors `MAX_DURATION_SECONDS` in audio-core; the worker enforces it. */
+export const MAX_DURATION_SECONDS = 600;
+const METADATA_TIMEOUT_MS = 5000;
+
+function mmss(seconds: number): string {
+  const total = Math.floor(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+export function tooLongMessage(seconds: number): string {
+  return `Este tema dura ${mmss(seconds)}. El máximo es 10 minutos.`;
+}
+
+export type DurationCheck = { ok: true } | { ok: false; code: "duration"; message: string };
+
+/** `null` means the browser could not read the duration: the server decides then. */
+export function checkDuration(
+  seconds: number | null,
+  maxSeconds: number = MAX_DURATION_SECONDS,
+): DurationCheck {
+  if (seconds === null || !Number.isFinite(seconds)) return { ok: true };
+  // Same tolerance as the worker (0.5 s) so a borderline 10:00 file is not blocked here.
+  if (seconds > maxSeconds + 0.5) return { ok: false, code: "duration", message: tooLongMessage(seconds) };
+  return { ok: true };
+}
+
+/**
+ * Duration from the file's metadata only (no decoding). Resolves `null` when the browser cannot
+ * read it (unsupported format, error, or no answer within 5 s).
+ */
+export function readDuration(file: Blob, timeoutMs: number = METADATA_TIMEOUT_MS): Promise<number | null> {
+  return new Promise((resolve) => {
+    let url: string;
+    try {
+      url = URL.createObjectURL(file);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const audio = new Audio();
+    const finish = (value: number | null) => {
+      clearTimeout(timer);
+      audio.removeAttribute("src");
+      audio.load();
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () =>
+      finish(Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null);
+    audio.onerror = () => finish(null);
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    audio.src = url;
+  });
+}

@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -5,7 +7,7 @@ import pytest
 import soundfile as sf
 
 from audio_core.constants import SAMPLE_RATE
-from audio_core.io import DecodeError, decode, duration_seconds, write_wav
+from audio_core.io import DecodeError, decode, duration_seconds, probe_duration, write_wav
 from tests.conftest import SINE_AMPLITUDE, requires_ffmpeg
 
 
@@ -42,3 +44,35 @@ def test_write_wav_round_trip(tmp_path: Path) -> None:
     data, rate = sf.read(str(path), dtype="float32", always_2d=True)
     assert rate == SAMPLE_RATE
     np.testing.assert_array_equal(data.T, audio)
+
+
+@pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe not on PATH")
+def test_probe_duration_reads_the_container_duration(sine_wav: Path) -> None:
+    assert probe_duration(sine_wav) == pytest.approx(3.0, abs=0.01)
+
+
+def test_probe_duration_is_none_for_a_missing_file(tmp_path: Path) -> None:
+    assert probe_duration(tmp_path / "missing.wav") is None
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        FileNotFoundError("ffprobe"),
+        subprocess.TimeoutExpired("ffprobe", 1),
+        subprocess.CompletedProcess([], 1, b"", b"boom"),
+        subprocess.CompletedProcess([], 0, b"N/A\n", b""),
+        subprocess.CompletedProcess([], 0, b"nan\n", b""),
+        subprocess.CompletedProcess([], 0, b"", b""),
+    ],
+)
+def test_probe_duration_falls_back_to_none_on_failure(
+    failure: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_run(*_args: object, **_kwargs: object) -> object:
+        if isinstance(failure, Exception):
+            raise failure
+        return failure
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert probe_duration(tmp_path / "x.wav") is None

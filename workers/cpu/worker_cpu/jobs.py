@@ -30,7 +30,8 @@ from typing import Any
 
 from audio_core.analysis import AnalyzeOptions
 from audio_core.analysis import analyze as run_analyze
-from audio_core.io import decode
+from audio_core.constants import MAX_DURATION_SECONDS, MAX_DURATION_TOLERANCE_SECONDS
+from audio_core.io import decode, duration_seconds, probe_duration
 from audio_core.models import Analysis, Sections, StagePackOptions, StemSet
 from audio_core.sections import detect_sections, sections_model_version
 from audio_core.separation import DEFAULT_MODEL
@@ -110,11 +111,31 @@ def _source_name(storage: Storage, song_id: str) -> str:
     return names[0]
 
 
+def _mmss(seconds: float) -> str:
+    total = int(seconds)
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _check_duration(seconds: float) -> None:
+    """Reject a song longer than the product maximum with a user-facing Spanish message."""
+    if seconds > MAX_DURATION_SECONDS + MAX_DURATION_TOLERANCE_SECONDS:
+        raise JobError(
+            f"El tema dura {_mmss(seconds)} y el máximo es {_mmss(MAX_DURATION_SECONDS)}."
+        )
+
+
 def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, str]:
     name = _source_name(storage, song_id)
     local = workdir / name
     storage.get_file(song_id, name, local)
-    return decode(local), name
+    # Cheap container check first, so an over-long file is never decoded into memory.
+    probed = probe_duration(local)
+    if probed is not None:
+        _check_duration(probed)
+    audio = decode(local)
+    # ffprobe failed or lied (missing or wrong container duration): the decoded length decides.
+    _check_duration(duration_seconds(audio))
+    return audio, name
 
 
 @tracked

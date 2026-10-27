@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatBytes } from "./format";
-import { ACCEPT, extensionOf, validateFile } from "./upload";
+import { ACCEPT, checkDuration, extensionOf, tooLongMessage, validateFile } from "./upload";
 
 const MB = 1024 * 1024;
 
@@ -51,5 +51,31 @@ describe("formatBytes", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(1536)).toBe("1,5 KB");
     expect(formatBytes(12.4 * MB)).toBe("12,4 MB");
+  });
+});
+
+describe("checkDuration", () => {
+  it("lets the server decide when the duration is unknown", () => {
+    expect(checkDuration(null)).toEqual({ ok: true });
+    expect(checkDuration(Number.NaN)).toEqual({ ok: true });
+  });
+  it("accepts up to 10 minutes, with the worker's half-second tolerance", () => {
+    expect(checkDuration(180)).toEqual({ ok: true });
+    expect(checkDuration(600)).toEqual({ ok: true });
+    expect(checkDuration(600.5)).toEqual({ ok: true });
+  });
+  it("blocks a longer song with the duration in the message", () => {
+    expect(checkDuration(601)).toEqual({
+      ok: false,
+      code: "duration",
+      message: "Este tema dura 10:01. El máximo es 10 minutos.",
+    });
+  });
+});
+
+describe("tooLongMessage", () => {
+  it("formats minutes and zero-padded seconds, past one hour too", () => {
+    expect(tooLongMessage(1421.7)).toBe("Este tema dura 23:41. El máximo es 10 minutos.");
+    expect(tooLongMessage(3605)).toBe("Este tema dura 60:05. El máximo es 10 minutos.");
   });
 });

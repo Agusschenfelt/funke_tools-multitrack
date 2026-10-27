@@ -8,7 +8,7 @@ import { rememberSong, updateRecent } from "@/lib/recentSongs";
 import { recentFromUpload } from "@/lib/recentVerification";
 import { processingQuery, startMissingJobs } from "@/lib/startJobs";
 import { formatBytes } from "@/lib/format";
-import { ACCEPT, MAX_UPLOAD_MB, formatsLabel, validateFile } from "@/lib/upload";
+import { ACCEPT, MAX_UPLOAD_MB, checkDuration, formatsLabel, readDuration, validateFile } from "@/lib/upload";
 import { BarProgress } from "./BarProgress";
 import { RecentSongs } from "./RecentSongs";
 import styles from "./UploadScreen.module.css";
@@ -52,6 +52,11 @@ export function UploadScreen() {
       const check = validateFile(file);
       if (!check.ok) {
         setState({ phase: "error", message: check.message });
+        return;
+      }
+      const duration = checkDuration(await readDuration(file));
+      if (!duration.ok) {
+        setState({ phase: "error", message: duration.message });
         return;
       }
       const controller = new AbortController();
@@ -157,7 +162,7 @@ export function UploadScreen() {
               Elegir archivo
             </button>
             <p className={styles.constraints}>
-              {formatsLabel()}. Hasta {MAX_UPLOAD_MB} MB.
+              {formatsLabel()}. Hasta {MAX_UPLOAD_MB} MB y 10 minutos.
             </p>
           </div>
         )}

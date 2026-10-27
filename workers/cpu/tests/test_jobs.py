@@ -3,8 +3,10 @@ import json
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 import soundfile as sf
+from audio_core.constants import SAMPLE_RATE
 from audio_core.models import Analysis, Sections, StemSet
 from rq.job import JobStatus
 
@@ -324,3 +326,42 @@ def test_stagepack_outside_rq_is_stored_under_a_recognisable_orphan_directory(
     (stored,) = storage.list_names(song, "packs/")
     assert stored.startswith("packs/direct-") and stored.endswith(f"/{name}")
     assert "outside an RQ job" in caplog.text
+
+
+def _long_wav(path: Path, seconds: int) -> None:
+    sf.write(str(path), np.zeros(seconds * 8000, dtype=np.float32), 8000)
+
+
+@requires_ffmpeg
+@pytest.mark.parametrize("job", [jobs.analyze_job, jobs.separate_job])
+def test_jobs_reject_a_song_over_the_maximum_before_decoding(
+    job, storage: LocalStorage, tmp_path: Path, fake_models: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wav = tmp_path / "long.wav"
+    _long_wav(wav, 601 + 1)  # 602 s mono at 8 kHz is about 10 MB
+    storage.put_file("long", "source.wav", wav)
+
+    def no_decode(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("decode must not run for an over-long file")
+
+    monkeypatch.setattr(jobs, "decode", no_decode)
+    with pytest.raises(jobs.JobError, match=r"El tema dura 10:02 y el máximo es 10:00\."):
+        job("long")
+
+
+def test_over_long_message_is_in_minutes_and_seconds() -> None:
+    with pytest.raises(jobs.JobError, match=r"23:41 y el máximo es 10:00"):
+        jobs._check_duration(23 * 60 + 41.4)
+    jobs._check_duration(600.5)  # tolerance
+    jobs._check_duration(600)
+
+
+def test_decoded_length_decides_when_ffprobe_fails(
+    song: str, storage: LocalStorage, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    long_audio = np.zeros((2, 620 * SAMPLE_RATE // 10), dtype=np.float32)  # 62 s of audio
+    monkeypatch.setattr(jobs, "probe_duration", lambda _p: None)
+    monkeypatch.setattr(jobs, "decode", lambda _p: long_audio)
+    monkeypatch.setattr(jobs, "MAX_DURATION_SECONDS", 60)
+    with pytest.raises(jobs.JobError, match="El tema dura 1:02 y el máximo es 1:00"):
+        jobs.analyze_job(song)
