@@ -1,0 +1,334 @@
+.panel {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-2);
+}
+
+/* Undo, redo and save sit together; the status line takes the rest of the row. */
+.save {
+  margin-left: var(--space-2);
+}
+
+.message {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin-left: var(--space-2);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.message:empty {
+  display: none;
+}
+
+.hintWide {
+  max-width: var(--measure);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.hintNarrow {
+  display: none;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+.hintNarrow summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hintNarrow summary::-webkit-details-marker {
+  display: none;
+}
+
+.hintNarrow summary::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid currentcolor;
+  border-bottom: 2px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.hintNarrow[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.failed {
+  color: var(--error);
+}
+
+.button,
+.save,
+.input {
+  min-height: var(--touch);
+  border-radius: var(--radius);
+}
+
+.button {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--graphite);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--ink-lifted);
+}
+
+.save {
+  padding: 0 var(--space-5);
+  border: 0;
+  background: var(--orange);
+  color: var(--on-orange);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.save:hover:not(:disabled) {
+  background: var(--orange-hover);
+}
+
+.save:active:not(:disabled) {
+  background: var(--orange-press);
+}
+
+.button:disabled,
+.save:disabled {
+  color: var(--paper-dim);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.save:disabled {
+  background: var(--ink-lifted);
+}
+
+/* Desktop: one row overlaying a thin band right under the strip (<= ~56px of lanes), no layout shift. */
+.sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  border: 1px solid var(--graphite);
+  border-top: 0;
+  background: var(--ink-raised);
+  box-shadow: 0 0.5rem 1rem rgb(0 0 0 / 0.4);
+}
+
+.editor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+}
+
+/* On desktop the head dissolves: the name select already shows the section; Cerrar ends the row. */
+.sheetHead {
+  display: contents;
+}
+
+.heading {
+  display: none;
+}
+
+.close {
+  order: 10;
+  margin-left: auto;
+  flex: none;
+}
+
+.fields {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.field {
+  display: block;
+}
+
+.fieldName {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.input {
+  width: 100%;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--graphite);
+  background: var(--ink-raised);
+  color: var(--paper);
+  font-size: var(--text-base);
+}
+
+.fields .field:first-child .input {
+  width: 9rem;
+}
+
+.fields .field:last-child .input {
+  width: 11rem;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.actions .button,
+.close {
+  padding: 0 var(--space-3);
+  white-space: nowrap;
+}
+
+.hint {
+  max-width: var(--measure);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 47.99rem) {
+  /* One compact row: Deshacer, Rehacer, Guardar share the width. */
+  .bar {
+    flex-wrap: wrap;
+  }
+
+  .bar .button,
+  .bar .save {
+    flex: 1 1 0;
+    min-height: var(--touch);
+    margin-left: 0;
+    padding: 0 var(--space-2);
+  }
+
+  .message {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .hintWide {
+    display: none;
+  }
+
+  .hintNarrow {
+    display: block;
+  }
+
+  /* Bottom sheet sitting on top of the fixed transport, with its own scroll. */
+  .sheet {
+    position: fixed;
+    top: auto;
+    bottom: calc(var(--transport-h) + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--graphite);
+    border-bottom: 0;
+    max-height: min(26rem, calc(100dvh - var(--transport-h) - env(safe-area-inset-bottom, 0px) - 6rem));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: 0 -0.5rem 1rem rgb(0 0 0 / 0.4);
+  }
+
+  .editor {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--gutter);
+    overflow-x: visible;
+  }
+
+  .sheetHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-3);
+    min-width: 0;
+    font-size: var(--text-base);
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .where {
+    color: var(--paper-dim);
+    font-weight: 400;
+    text-transform: none;
+  }
+
+  .close {
+    order: 0;
+    margin-left: 0;
+  }
+
+  .fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .field {
+    display: grid;
+    gap: var(--space-1);
+    color: var(--paper-dim);
+    font-size: var(--text-sm);
+  }
+
+  .fieldName {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+
+  .fields .field:first-child .input,
+  .fields .field:last-child .input {
+    width: 100%;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .actions .button {
+    padding: 0 var(--space-2);
+  }
+
+  .button {
+    min-height: 3.25rem;
+    padding: 0 var(--space-2);
+  }
+
+  .input {
+    min-height: 3.25rem;
+  }
+}

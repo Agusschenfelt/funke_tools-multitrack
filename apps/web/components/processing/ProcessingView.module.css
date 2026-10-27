@@ -1,0 +1,170 @@
+.page {
+  width: 100%;
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) var(--space-8);
+}
+
+.title {
+  font-size: clamp(1.5rem, 1rem + 2.5vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.block {
+  max-width: 44rem;
+  margin-top: var(--space-6);
+}
+
+.heading {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.note {
+  max-width: var(--measure);
+  margin-top: var(--space-4);
+  color: var(--paper-dim);
+}
+
+.errorText {
+  margin-top: var(--space-3);
+  color: var(--error);
+}
+
+.problem,
+.fatal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  color: var(--error);
+}
+
+.problem p,
+.fatal p {
+  max-width: var(--measure);
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.primary {
+  margin-top: var(--space-6);
+  background: var(--orange);
+  color: var(--on-orange);
+}
+
+.primary:hover {
+  background: var(--orange-hover);
+}
+
+.primary:active {
+  background: var(--orange-press);
+}
+
+.secondary {
+  background: transparent;
+  border-color: var(--graphite);
+  color: var(--paper);
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--paper);
+}
+
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Partial result: key and BPM are the loudest things on the page, like the top of a chord sheet. */
+.facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4) var(--space-4);
+  margin: 0;
+  padding: var(--space-3) 0 var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.fact {
+  min-width: 0;
+}
+
+.fact dt {
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fact dd {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.big {
+  font-size: clamp(3rem, 16vw, 4.5rem);
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.mode {
+  color: var(--paper-dim);
+  font-size: var(--text-base);
+}
+
+.form {
+  margin-top: var(--space-4);
+}
+
+.formLabel {
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.formLine {
+  margin-top: var(--space-1);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 40rem) {
+  .facts {
+    grid-template-columns: repeat(4, auto);
+    justify-content: start;
+    gap: var(--space-4) var(--space-7);
+  }
+
+  .big {
+    font-size: 3.5rem;
+  }
+}

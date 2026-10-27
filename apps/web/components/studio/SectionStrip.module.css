@@ -1,0 +1,208 @@
+.strip {
+  display: grid;
+  grid-template-columns: var(--lane-head) minmax(0, 1fr);
+  border-bottom: 1px solid var(--rule);
+}
+
+.track {
+  position: relative;
+  height: 4.25rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.section {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.75rem;
+  padding: 0 var(--space-2) 0 var(--space-2);
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--graphite);
+  background: transparent;
+  color: var(--paper);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.section {
+  container-type: inline-size;
+}
+
+.section:hover {
+  background: var(--ink-raised);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+
+.sign,
+.times {
+  flex: none;
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+/* The active section carries a 2px orange bracket at the top of the strip; its text stays paper. */
+.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0.5rem;
+  border: 2px solid var(--orange);
+  border-bottom: 0;
+  pointer-events: none;
+}
+
+/* The chosen section for editing: a neutral frame, apart from the orange active bracket. */
+.selected {
+  background: var(--ink-raised);
+  outline: 1px solid var(--paper);
+  outline-offset: -1px;
+}
+
+/* A weak or missing detected label: plain words, no alarm colour beyond the warning tone. */
+.review {
+  flex: none;
+  color: var(--warning);
+  font-size: 0.75rem;
+  text-transform: lowercase;
+}
+
+@container (max-width: 7rem) {
+  .review {
+    width: 0.5rem;
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--warning);
+    color: transparent;
+    font-size: 0;
+  }
+}
+
+.repeatLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--rule);
+  pointer-events: none;
+}
+
+.edge {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 1.25rem;
+  height: 2.75rem;
+  margin-left: -0.625rem;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.grip {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  left: 50%;
+  width: 0.25rem;
+  margin-left: -0.125rem;
+  border-radius: 1px;
+  background: var(--graphite);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.edge:hover .grip,
+.edge:focus-visible .grip,
+.edgeDragging .grip {
+  background: var(--orange);
+  opacity: 1;
+}
+
+.tip {
+  position: absolute;
+  top: -1.75rem;
+  left: 50%;
+  padding: 0 var(--space-2);
+  background: var(--orange);
+  color: var(--on-orange);
+  font-size: var(--text-sm);
+  line-height: 1.5rem;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.bars {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1.5rem;
+  border-top: 1px solid var(--rule);
+  pointer-events: none;
+}
+
+.bar {
+  position: absolute;
+  top: 0;
+  padding: 0.125rem 0 0 var(--space-1);
+  border-left: 1px solid var(--graphite);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+  line-height: 1.25rem;
+}
+
+.barAnchor {
+  color: var(--paper);
+}
+
+@media (pointer: coarse) {
+  .edge {
+    display: none;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .edge {
+    display: none;
+  }
+
+  .strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .corner {
+    display: none;
+  }
+
+  .track {
+    height: 3.75rem;
+  }
+
+  .section {
+    height: 2.25rem;
+    padding: 0 var(--space-1);
+  }
+
+  .label {
+    font-size: 0.75rem;
+    letter-spacing: 0.03em;
+  }
+}

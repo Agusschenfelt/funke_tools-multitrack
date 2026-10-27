@@ -1,0 +1,212 @@
+.transport {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  box-sizing: border-box;
+  /* Studio reserves exactly this much room at the bottom of the page. */
+  /* A minimum, not a fixed height: the 1px border or a taller control grows it instead of overflowing. */
+  min-height: calc(var(--transport-h) + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--rule);
+  background: var(--ink-raised);
+}
+
+.minimap {
+  position: relative;
+  height: 1.5rem;
+  max-width: 90rem;
+  margin: 0 auto var(--space-3);
+  background: var(--ink);
+  cursor: pointer;
+}
+
+.mapSection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--graphite);
+  pointer-events: none;
+}
+
+/* The section under the playhead is a neutral span; orange stays with the playhead. */
+.mapActive {
+  background: var(--ink-lifted);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  max-width: 90rem;
+  margin: 0 auto;
+}
+
+.play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--orange);
+  color: var(--on-orange);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.play:hover:not(:disabled) {
+  background: var(--orange-hover);
+}
+
+.play:active:not(:disabled) {
+  background: var(--orange-press);
+}
+
+.play:disabled {
+  background: var(--ink-lifted);
+  color: var(--paper-dim);
+  cursor: not-allowed;
+}
+
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.bars {
+  min-width: 4ch;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.total {
+  color: inherit;
+}
+
+.bars[data-word] {
+  font-size: var(--text-base);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.clock {
+  color: var(--paper-dim);
+  white-space: nowrap;
+}
+
+.toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.toggle,
+.language {
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--ink-lifted);
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
+}
+
+.toggle:disabled {
+  color: var(--paper-dim);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.language {
+  padding: 0 var(--space-3);
+  background: var(--ink-raised);
+}
+
+.note {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  padding: var(--space-1) var(--gutter);
+  background: var(--ink-raised);
+  color: var(--paper-dim);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 47.99rem) {
+  .transport {
+    padding-top: var(--space-2);
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .minimap {
+    height: 1.5rem;
+    margin-bottom: var(--space-2);
+  }
+
+  /* One row: play, position, then click, cues and language. */
+  .controls {
+    gap: var(--space-3);
+  }
+
+  .play {
+    width: 3.25rem;
+    height: 3.25rem;
+  }
+
+  .bars {
+    min-width: 4ch;
+    font-size: 1.75rem;
+  }
+
+  .bars[data-word] {
+    font-size: var(--text-sm);
+  }
+
+  .readout {
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .clock {
+    font-size: var(--text-sm);
+  }
+
+  .total {
+    display: none;
+  }
+
+  .toggles {
+    gap: var(--space-1);
+  }
+
+  .toggle {
+    padding: 0 var(--space-3);
+  }
+
+  .language {
+    padding: 0 var(--space-2);
+  }
+}

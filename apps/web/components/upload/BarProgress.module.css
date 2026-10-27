@@ -1,0 +1,47 @@
+.staff {
+  width: 100%;
+}
+
+.bars {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  height: 2.5rem;
+  border-right: 1px solid var(--graphite);
+  animation: draw var(--duration-draw) var(--ease-out) backwards;
+}
+
+.bar {
+  border-left: 1px solid var(--graphite);
+}
+
+.fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--orange);
+  transition: width var(--duration-fast) linear;
+}
+
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  margin-top: var(--space-1);
+  color: var(--paper-dim);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.numbers span {
+  padding-left: 3px;
+}
+
+@keyframes draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}

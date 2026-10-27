@@ -1,0 +1,54 @@
+/* Design tokens: the only place raw colours, sizes and durations are defined. */
+:root {
+  color-scheme: dark;
+
+  /* Ink: the page ground and the surfaces raised from it. */
+  --ink: #141210;
+  --ink-raised: #1c1a17;
+  --ink-lifted: #272420;
+
+  /* Paper: text. Graphite is for hairlines and large or decorative marks only (3.4:1 on ink);
+     --paper-dim is the secondary text colour that clears 4.5:1. */
+  --paper: #ede6da;
+  --paper-dim: #a59e92;
+  --graphite: #6f6a63;
+  --rule: #38342f;
+
+  /* Orange: the ballpoint mark. Active section, playhead, primary action. Nothing else. */
+  --orange: #fd5609;
+  --orange-hover: #ff6f2b;
+  --orange-press: #e24a03;
+  --on-orange: #141210;
+
+  /* State colours, used only where the state carries meaning. */
+  --error: #f08b7c;
+  --warning: #e3b54f;
+
+  /* Type */
+  --font-ui: var(--font-schibsted), system-ui, sans-serif;
+  --font-mono: var(--font-courier), "Courier New", monospace;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --display: clamp(2rem, 1.2rem + 4.2vw, 3.75rem);
+
+  /* Space and shape */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+  --gutter: 1rem;
+  --touch: 2.75rem;
+  --radius: 2px;
+  --measure: 62ch;
+  --page-width: 64rem;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 140ms;
+  --duration-draw: 700ms;
+}
