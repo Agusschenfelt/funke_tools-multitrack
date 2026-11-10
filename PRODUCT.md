@@ -1,7 +1,5 @@
 # Product
 
-<!-- impeccable:product-schema 1 -->
-
 ## Platform
 
 web
@@ -9,7 +7,7 @@ web
 ## Stack
 
 Next.js in `apps/web` (from the project brief, confirmed by the user 2026-10-26). Backend is the FastAPI
-service in `apps/api`; audio processing runs in RQ workers. Deploy target: undecided.
+service in `apps/api`; audio processing runs in RQ workers. Deployed with Docker Compose on a VPS behind Caddy (see `infra/prod/README.md`).
 
 ## Users
 
@@ -55,8 +53,8 @@ software, with spoken cues in Spanish. Code is open source (AGPL); no ads or spo
 
 - Agency: funke (funke.cc, Instagram bio "Hacemos ke funke").
 - Logo: jagged hand-lettered "funke" wordmark with ®. Primary version is the orange one (#FD5609);
-  white and black versions exist. Files: `the Funke brand kit/Funke - Logo-01.png`
-  (orange), `-02.png` (white), `-03.png` (black), transparent PNG 4000x2022.
+  white and black versions exist. Source files are in the Funke brand kit (not in this repo); exported rasters live in
+  `apps/web/public/brand/`.
 - Dark mode by default (brief).
 - UI copy in Spanish (Rioplatense, voseo); pack file names follow the destination.
 

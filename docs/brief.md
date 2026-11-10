@@ -1,6 +1,6 @@
 # Brief · Tool de multitracks y stems
 
-Oct 24, 2026 · @Agus
+Oct 24, 2026
 
 ## Visión y alcance
 
@@ -264,7 +264,7 @@ La única pieza que cuesta plata por canción es la separación en GPU. Todo lo 
 | Archivos | R2 con borrado a 24 horas | Casi nulo |
 | Dominio | Un .com o .ar | Anual |
 
-La agencia financia la tool como parte de su marca. Sin publicidad ni sponsors (decisión del 2026-10-25). Se mantiene un límite diario por usuario para que la GPU no se dispare. Los costos se siguen en docs/costos.md.
+La agencia financia la tool como parte de su marca. Sin publicidad ni sponsors (decisión del 2026-10-25). Se mantiene un límite diario por usuario para que la GPU no se dispare.
 
 ## Instrucciones para Claude Code
 

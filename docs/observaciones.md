@@ -14,7 +14,7 @@ Se actualiza a medida que aparecen. Última actualización: 2026-10-25.
 
 ## Prueba de la v1 con el equipo
 
-La v1 está publicada en https://tool.example.com (VPS compartida, con un techo de 2 núcleos y 5 GB para la tool). Cada tema se procesa de a uno. En la VPS la separación tarda ~1,5 s por segundo de audio (un tema de 4 minutos, unos 6 minutos), y el estudio descarga stems comprimidos de ~3 MB cada uno.
+La v1 corre en una VPS propia (compartida, con un techo de 2 núcleos y 5 GB para la tool). Cada tema se procesa de a uno. En la VPS la separación tarda ~1,5 s por segundo de audio (un tema de 4 minutos, unos 6 minutos), y el estudio descarga stems comprimidos de ~3 MB cada uno.
 
 Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durante el desarrollo.
 
@@ -42,14 +42,11 @@ Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durant
 ### Backend
 
 - Si la limpieza borra una canción mientras un trabajo suyo está corriendo, el registro de salida que escribe el trabajo al terminar puede volver a crear la carpeta de la canción. Queda como carpeta huérfana hasta la limpieza manual del worker.
-- Antes de desplegar un cambio en el formato de los trabajos de la cola, hay que vaciar la cola `cpu`.
 
 ### Separación
 
-- La imagen Docker del worker pesa 10,5 GB porque torch para Linux baja los paquetes de CUDA desde PyPI. Usar el índice solo-CPU de PyTorch la achicaría mucho; está anotado en `infra/README.md`. La imagen de la API pesa 694 MB y no incluye torch.
-
-- En CPU (Mac Intel de desarrollo) `htdemucs_6s` tarda 0,70 s por segundo de audio. Con GPU sería mucho más rápido; en el VPS de producción (solo CPU) la separación corre en segundo plano, ver la línea siguiente.
-- Con la imagen solo-CPU (2,9 GB) y 2 núcleos, un tema de 4 minutos tardó: análisis 2:45, separación 15:21, pack 1:36; pico de memoria anónima del worker ~2,3 GB; el pico del cgroup (`memory.current`, con caché de páginas) fue 2,9 GiB, que es la cifra que fija el límite de 3,5 GiB. La separación de 921 s para 240 s de audio equivale a unos 3,8 s por segundo. La proyección anterior (unos 25 minutos para 4 minutos de audio) salía de una medición con la imagen CUDA, 201 s para 32 s de audio (unos 6,3 s por segundo), y ya no aplica. En producción la separación es un trabajo asíncrono de unos 15 minutos por tema de 4 minutos, con una sola tarea a la vez. Alcanza para que el equipo pruebe; para uso público la cola se haría larga y sigue haciendo falta la GPU de la fase 2.
+- La imagen Docker del worker (solo-CPU) pesa 2,9 GB y la de la API 694 MB, sin torch. Detalle en `infra/README.md`.
+- En CPU con 2 núcleos, un tema de 4 minutos tarda: análisis 2:45, separación 15:21, pack 1:36 (separación ~3,8 s por segundo de audio). El pico de memoria del cgroup fue 2,9 GiB, que fija el límite de 3,5 GiB. En producción la separación es un trabajo asíncrono de unos 15 minutos por tema, con una sola tarea a la vez. Alcanza para que el equipo pruebe; para uso público la cola se haría larga y hace falta GPU.
 - El primer análisis después de levantar el worker tarda unos 7 minutos porque baja los pesos de beat_this (~180 kB/s). Conviene pre-descargar los pesos al construir la imagen.
 - El worker de Linux debe usar torch 2.6 o más nuevo. La versión 2.2.2 de desarrollo solo existe porque Intel macOS no tiene wheels más nuevas, y tiene una vulnerabilidad conocida (CVE-2025-32434).
 
@@ -67,22 +64,17 @@ Estas pruebas necesitan oído de músico; se hacen con la v1 completa, no durant
 
 ## Decisiones tomadas
 
-- 2026-10-26: repo privado en GitHub (`Agusschenfelt/funke_tools-multitrack`). Se abre cuando la tool esté online, momento en que la AGPL obliga a publicar el código. `main` apunta al commit inicial; el trabajo está en ramas `feat/*` apiladas.
 - 2026-10-25: el Stage Pack recibe las secciones como entrada opcional (`sections.json`). Sin secciones, la guía solo trae la cuenta del count-in.
 - 2026-10-25: cues con Piper (`es_MX/ald` y `en_US/ljspeech`) ahora; voz rioplatense propia más adelante. Cambiarla es solo reemplazar archivos y el `manifest.json`.
 - 2026-10-25: detección de secciones con un pipeline propio sin pesos entrenados (segmentación de librosa más reglas para nombrar). Los nombres son sugerencias con nivel de confianza.
 
-## Próximos pasos (estado al 27/10/2026)
+## Próximos pasos
 
-Producción coincide con `main` (`cf427f6`, PR #9). Para retomar, empezar por esta lista.
-
-1. **Cambio de tono y tempo con Rubber Band.** Es lo siguiente acordado: transponer y cambiar el tempo de los stems sin alterar el otro parámetro.
-2. **Avisos menores de la revisión de UX v1** (detalle en `odd/tasks/ux-v1.md`):
-   - Si el navegador rechaza la notificación de "listo", el error no se muestra (`useWaitSignals.ts`).
-   - El resultado parcial puede quedar con un texto provisorio viejo (`ResultFill.tsx`).
-   - Dos detalles de legibilidad del código (`help.ts`, `Transport.tsx`).
-3. **Problemas P2 de la crítica de UX** (`.impeccable/critique/2026-10-27T14-51-41Z__apps-web.md`):
-   - Exportar en el celular: separar las opciones en "Básico" y "Avanzado" con valores recomendados, y evitar que la barra fija tape contenido.
+1. **Cambio de tono y tempo con Rubber Band:** transponer y cambiar el tempo de los stems sin alterar el otro parámetro.
+2. **Avisos menores de la revisión de UX:**
+   - Si el navegador rechaza la notificación de "listo", el error no se muestra.
+   - El resultado parcial puede quedar con un texto provisorio viejo.
+3. **Exportar en el celular:** separar las opciones en "Básico" y "Avanzado" con valores recomendados, y evitar que la barra fija tape contenido.
 4. **Funciones pendientes:**
    - Editor de grilla.
    - Audio a MIDI con basic-pitch.
@@ -90,5 +82,4 @@ Producción coincide con `main` (`cf427f6`, PR #9). Para retomar, empezar por es
    - Destino Prime: probar con una importación real (ver la tabla de pendientes del equipo).
 5. **Detalles conocidos:**
    - En escritorio, el editor de secciones tapa el carril de Batería.
-   - El equipo tiene que volver a subir los temas para obtener acordes y tono alternativo.
-
+   - Hay que volver a subir los temas ya procesados para obtener acordes y tono alternativo.

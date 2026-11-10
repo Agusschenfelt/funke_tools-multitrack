@@ -44,10 +44,6 @@ The worker executes the jobs it finds in Redis, so Redis is treated as a trust b
 - The worker only runs `worker_cpu.jobs.analyze_job`, `separate_job` and `stagepack_job`; any other
   function name in a job record fails the job before anything is imported.
 
-Upgrade note: drain the cpu queue before deploying a serializer change (for example the move from
-pickle to JSON records). The worker cannot read records written with the old serializer, so jobs
-still queued or running would fail.
-
 To debug from the host, opt in to loopback-only ports for Redis and Postgres:
 
 ```sh
