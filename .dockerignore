@@ -7,7 +7,6 @@
 **/*.egg-info
 **/tests
 .git
-.atl
 odd
 docs
 infra

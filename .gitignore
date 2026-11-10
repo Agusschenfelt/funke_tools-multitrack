@@ -17,13 +17,10 @@ node_modules/
 
 # Outputs
 out/
-tests/fixtures/generated/*.wav
 
 # macOS
 .DS_Store
 
-# Tooling caches
-.atl/
-
-# Impeccable review captures (regenerated per review)
-.impeccable/review/
+# Local working notes and design-tool state
+odd/
+.impeccable/
