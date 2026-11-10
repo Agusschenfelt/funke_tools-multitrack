@@ -1,6 +1,5 @@
 import math
 import re
-import time
 from pathlib import Path
 
 import numpy as np
@@ -120,9 +119,7 @@ def test_separate_htdemucs_ft_cpu(tmp_path: Path) -> None:
     input with a relative residual below RESIDUAL_LIMIT_DB.
     """
     mix = _synthetic_mix()
-    started = time.perf_counter()
     result = separate(mix, "synthetic", model="htdemucs_ft", out_dir=tmp_path, device="cpu")
-    wall = time.perf_counter() - started
 
     assert [s.name for s in result.stems] == list(ALLOWED_MODELS["htdemucs_ft"])
     total = np.zeros_like(mix, dtype=np.float64)
@@ -135,11 +132,6 @@ def test_separate_htdemucs_ft_cpu(tmp_path: Path) -> None:
     residual = total - mix
     rms = lambda x: math.sqrt(float(np.mean(np.square(x, dtype=np.float64))))  # noqa: E731
     residual_db = 20 * math.log10(rms(residual) / rms(mix))
-    print(
-        f"\nstem-sum residual {residual_db:.1f} dB | apply {result.elapsed_seconds:.1f} s | "
-        f"load {result.load_seconds:.1f} s | audio {result.audio_seconds:.1f} s | "
-        f"ratio {result.elapsed_seconds / result.audio_seconds:.2f} | wall {wall:.1f} s"
-    )
     assert residual_db < RESIDUAL_LIMIT_DB
     assert result.model.name == "htdemucs_ft"
     assert result.audio_seconds == pytest.approx(12.0)

@@ -241,11 +241,6 @@ def resolve_key_backend(backend: KeyBackend = "auto") -> Literal["essentia", "li
     return "librosa"
 
 
-def key_model_version(backend: KeyBackend = "auto") -> ModelVersion:
-    """The model record for whichever key backend `estimate_key` will use."""
-    return _key_model(resolve_key_backend(backend))
-
-
 def _key_model(used: Literal["essentia", "librosa"]) -> ModelVersion:
     """The model record of the key backend that actually produced the key."""
     if used == "essentia":

@@ -8,8 +8,6 @@ from pydantic import BaseModel, Field
 
 from api.queueing import JobState
 
-SEPARATION_MODELS = ("htdemucs_6s", "htdemucs_ft")
-
 
 class SongOut(BaseModel):
     id: str

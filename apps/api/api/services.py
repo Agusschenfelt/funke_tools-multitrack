@@ -171,7 +171,6 @@ def _normalize_result(kind: str, result: Any) -> dict | None:
         return None
     if isinstance(result, dict):
         return result
-    # stagepack_job returns the ZIP name.
     return {"filename": str(result)} if kind == "stagepack" else {"value": result}
 
 
