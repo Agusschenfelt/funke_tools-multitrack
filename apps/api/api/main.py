@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.bodylimit import BodyLimitMiddleware
 from api.cleanup import cleanup_loop
 from api.config import Settings, cors_origins_from_env
 from api.db import make_engine, make_session_factory
@@ -64,6 +65,7 @@ def create_app(
     app = FastAPI(title="Multitrack API", version="0.1.0", lifespan=lifespan)
     if settings is not None:
         app.state.ctx = build_context(settings, queue, clock)
+    app.add_middleware(BodyLimitMiddleware)
     origins = settings.cors_origins if settings is not None else cors_origins_from_env()
     if origins:
         app.add_middleware(
