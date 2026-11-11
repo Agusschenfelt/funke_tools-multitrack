@@ -161,7 +161,8 @@ def _decode_source(storage: Storage, song_id: str, workdir: Path) -> tuple[Any, 
     probed = probe_duration(local)
     if probed is not None and probed > MAX_DURATION_SECONDS + MAX_DURATION_PROBE_SLACK_SECONDS:
         _check_duration(probed)
-    audio = decode(local)
+    # Stop one second past the rejection threshold: still detected as too long, never unbounded.
+    audio = decode(local, max_seconds=MAX_DURATION_SECONDS + MAX_DURATION_TOLERANCE_SECONDS + 1)
     # Borderline or missing/wrong container duration: the decoded length decides.
     _check_duration(duration_seconds(audio))
     return audio, name

@@ -480,10 +480,25 @@ def test_probe_slightly_over_defers_to_the_decoded_length(
     """A VBR container can claim a few seconds more than it decodes to; the decode decides."""
     probed = MAX_DURATION_SECONDS + MAX_DURATION_PROBE_SLACK_SECONDS - 1
     decoded = np.zeros((2, SAMPLE_RATE), dtype=np.float32)
-    monkeypatch.setattr(jobs, "probe_duration", lambda _p: probed)
-    monkeypatch.setattr(jobs, "decode", lambda _p: decoded)
+    monkeypatch.setattr(jobs, "probe_duration", lambda _p, **_kw: probed)
+    monkeypatch.setattr(jobs, "decode", lambda _p, **_kw: decoded)
     audio, _name = jobs._decode_source(storage, song, Path(storage.root) / "scratch")
     assert audio is decoded
+
+
+def test_decode_is_bounded_just_past_the_rejection_threshold(
+    song: str, storage: LocalStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict = {}
+
+    def fake_decode(_path, **kwargs):
+        seen.update(kwargs)
+        return np.zeros((2, SAMPLE_RATE), dtype=np.float32)
+
+    monkeypatch.setattr(jobs, "probe_duration", lambda _p, **_kw: None)
+    monkeypatch.setattr(jobs, "decode", fake_decode)
+    jobs._decode_source(storage, song, Path(storage.root) / "scratch")
+    assert seen["max_seconds"] > MAX_DURATION_SECONDS + MAX_DURATION_TOLERANCE_SECONDS
 
 
 def test_probe_slightly_over_still_fails_when_the_decoded_length_is_over(
@@ -491,8 +506,10 @@ def test_probe_slightly_over_still_fails_when_the_decoded_length_is_over(
 ) -> None:
     probed = MAX_DURATION_SECONDS + MAX_DURATION_PROBE_SLACK_SECONDS - 1
     seconds = MAX_DURATION_SECONDS + 2
-    monkeypatch.setattr(jobs, "probe_duration", lambda _p: probed)
-    monkeypatch.setattr(jobs, "decode", lambda _p: np.zeros((2, seconds * SAMPLE_RATE), np.float32))
+    monkeypatch.setattr(jobs, "probe_duration", lambda _p, **_kw: probed)
+    monkeypatch.setattr(
+        jobs, "decode", lambda _p, **_kw: np.zeros((2, seconds * SAMPLE_RATE), np.float32)
+    )
     with pytest.raises(jobs.JobError, match=rf"^DURATION_LIMIT:{seconds}:"):
         jobs._decode_source(storage, song, Path(storage.root) / "scratch")
 
@@ -502,8 +519,8 @@ def test_decoded_length_decides_when_ffprobe_fails(
 ) -> None:
     limit, seconds = 60, 62
     long_audio = np.zeros((2, seconds * SAMPLE_RATE), dtype=np.float32)
-    monkeypatch.setattr(jobs, "probe_duration", lambda _p: None)
-    monkeypatch.setattr(jobs, "decode", lambda _p: long_audio)
+    monkeypatch.setattr(jobs, "probe_duration", lambda _p, **_kw: None)
+    monkeypatch.setattr(jobs, "decode", lambda _p, **_kw: long_audio)
     monkeypatch.setattr(jobs, "MAX_DURATION_SECONDS", limit)
     with pytest.raises(jobs.JobError, match=rf"^DURATION_LIMIT:{seconds}:{limit}$"):
         jobs.analyze_job(song)

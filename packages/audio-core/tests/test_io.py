@@ -103,3 +103,45 @@ def test_encode_preview_reports_an_unreadable_input(tmp_path: Path) -> None:
     bad.write_text("not audio", encoding="utf-8")
     with pytest.raises(DecodeError, match="ffmpeg failed to encode"):
         encode_preview(bad, tmp_path / "out.m4a")
+
+
+def _capture_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"0.0\n", stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    return calls
+
+
+def _assert_local_only(cmd: list[str]) -> None:
+    index = cmd.index("-protocol_whitelist")
+    assert cmd[index + 1] == "file"
+    if "-i" in cmd:
+        assert index < cmd.index("-i")
+
+
+def test_every_ffmpeg_invocation_restricts_protocols(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "in.wav"
+    source.write_bytes(b"x")
+    calls = _capture_run(monkeypatch)
+    decode(source)
+    probe_duration(source)
+    encode_preview(source, tmp_path / "out.m4a")
+    assert [c[0] for c in calls] == ["ffmpeg", "ffprobe", "ffmpeg"]
+    for cmd in calls:
+        _assert_local_only(cmd)
+
+
+def test_decode_max_seconds_bounds_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "in.wav"
+    source.write_bytes(b"x")
+    calls = _capture_run(monkeypatch)
+    decode(source, max_seconds=601.5)
+    decode(source)
+    assert calls[0][calls[0].index("-t") + 1] == "601.5"
+    assert "-t" not in calls[1]

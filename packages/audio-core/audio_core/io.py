@@ -16,19 +16,27 @@ class DecodeError(RuntimeError):
 
 DEFAULT_DECODE_TIMEOUT = 600.0
 
+# Uploaded files are untrusted: a crafted playlist (HLS, concat, ...) renamed to .mp3 could make
+# ffmpeg open network URLs or other local files. Only the input file itself is ever needed.
+INPUT_PROTOCOLS = ("-protocol_whitelist", "file")
 
-def decode(path: Path, timeout: float = DEFAULT_DECODE_TIMEOUT) -> np.ndarray:
+
+def decode(
+    path: Path, timeout: float = DEFAULT_DECODE_TIMEOUT, max_seconds: float | None = None
+) -> np.ndarray:
     """Decode any ffmpeg-readable file to float32 stereo at 44.1 kHz, shape (2, n_samples).
 
     The whole decoded stream is buffered in memory. That is acceptable because the product caps
     inputs at 10 minutes (about 212 MB of float32 stereo at 44.1 kHz); callers enforce that cap
-    with ``probe_duration`` before decoding.
+    with ``probe_duration`` before decoding. ``max_seconds`` stops decoding there, so a file whose
+    container lies about its duration cannot grow the buffer without bound.
     """
     if not Path(path).is_file():
         raise DecodeError(f"input file not found: {path}")
     cmd = [
         "ffmpeg", "-v", "error", "-nostdin",
-        "-i", str(path),
+        *INPUT_PROTOCOLS, "-i", str(path),
+        *(["-t", f"{max_seconds:g}"] if max_seconds is not None else []),
         "-f", "f32le", "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE),
         "-",
     ]  # fmt: skip
@@ -58,6 +66,7 @@ def probe_duration(path: Path, timeout: float = DEFAULT_PROBE_TIMEOUT) -> float 
     """
     cmd = [
         "ffprobe", "-v", "error",
+        *INPUT_PROTOCOLS,
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(path),
@@ -102,7 +111,7 @@ def encode_preview(
     target.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg", "-v", "error", "-nostdin", "-y",
-        "-i", str(source),
+        *INPUT_PROTOCOLS, "-i", str(source),
         "-vn", "-c:a", "aac", "-b:a", f"{bitrate_kbps}k",
         "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE),
         "-movflags", "+faststart",
