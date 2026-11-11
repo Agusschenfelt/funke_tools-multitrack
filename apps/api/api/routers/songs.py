@@ -19,7 +19,7 @@ from api.schemas import (
     SectionsOut,
     SeparateRequest,
     SongDetail,
-    UploadOut,
+    SongOut,
 )
 from api.services import artifacts_of, create_job, require_source
 
@@ -38,9 +38,14 @@ def _clean_filename(raw: str | None) -> str:
     return name[:255]
 
 
-@router.post("/songs", response_model=UploadOut, status_code=201, dependencies=[UploadLimit])
-def upload_song(file: UploadFile, response: Response, ctx: Ctx, session: DbSession) -> UploadOut:
-    """Store an upload, hashing while streaming; reuse a live song with the same audio hash."""
+@router.post("/songs", response_model=SongOut, status_code=201, dependencies=[UploadLimit])
+def upload_song(file: UploadFile, ctx: Ctx, session: DbSession) -> SongOut:
+    """Store an upload, hashing while streaming.
+
+    Every upload gets its own song id, which is the only access capability. Identical bytes are
+    deliberately not deduplicated: returning the existing id would hand another uploader's
+    filename, artifacts and section edits to anyone holding the same file.
+    """
     filename = _clean_filename(file.filename)
     extension = Path(filename).suffix.lower()
     if extension not in ctx.settings.allowed_extensions:
@@ -70,15 +75,6 @@ def upload_song(file: UploadFile, response: Response, ctx: Ctx, session: DbSessi
             raise HTTPException(400, "empty file")
         sha256 = digest.hexdigest()
         now = ctx.now()
-        existing = (
-            session.query(Song)
-            .filter(Song.sha256 == sha256, Song.expires_at > now)
-            .order_by(Song.created_at.desc())
-            .first()
-        )
-        if existing is not None:
-            response.status_code = 200
-            return UploadOut(**_song_fields(existing), reused=True)
         song = Song(
             filename=filename,
             sha256=sha256,
@@ -89,7 +85,7 @@ def upload_song(file: UploadFile, response: Response, ctx: Ctx, session: DbSessi
         session.flush()
         ctx.storage.put_file(song.id, f"{names.SOURCE_PREFIX}{extension}", tmp_path)
         session.commit()
-        return UploadOut(**_song_fields(song), reused=False)
+        return SongOut(**_song_fields(song))
     finally:
         tmp_path.unlink(missing_ok=True)
 

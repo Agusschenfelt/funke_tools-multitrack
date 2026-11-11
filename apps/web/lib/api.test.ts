@@ -120,7 +120,7 @@ describe("uploadSong", () => {
     expect((xhr.sent as FormData).get("file")).toBeInstanceOf(File);
     xhr.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 });
     xhr.status = 201;
-    xhr.responseText = JSON.stringify({ id: "s1", filename: "tema.wav", reused: false });
+    xhr.responseText = JSON.stringify({ id: "s1", filename: "tema.wav" });
     xhr.onload?.();
     await expect(promise).resolves.toMatchObject({ id: "s1" });
     expect(progress).toEqual([0.5]);

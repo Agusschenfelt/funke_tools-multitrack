@@ -56,10 +56,6 @@ export interface SongOut {
   expires_at: string;
 }
 
-export interface UploadOut extends SongOut {
-  reused: boolean;
-}
-
 export interface ArtifactLink {
   name: string;
   url: string;
@@ -378,8 +374,8 @@ export function startStagepack(
 export function uploadSong(
   file: File,
   { onProgress, signal }: RequestOptions & { onProgress?: (fraction: number) => void } = {},
-): Promise<UploadOut> {
-  return new Promise<UploadOut>((resolve, reject) => {
+): Promise<SongOut> {
+  return new Promise<SongOut>((resolve, reject) => {
     if (signal?.aborted) {
       reject(new ApiError("aborted", null));
       return;
@@ -397,7 +393,7 @@ export function uploadSong(
       done();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(JSON.parse(xhr.responseText) as UploadOut);
+          resolve(JSON.parse(xhr.responseText) as SongOut);
         } catch {
           reject(new ApiError("http", xhr.status, "invalid JSON"));
         }

@@ -140,24 +140,22 @@ def test_expired_song_download_links_are_gone_after_cleanup(client, store, clock
     assert client.get(url).status_code in (410, 403)
 
 
-# --- reuse ---------------------------------------------------------------------------------
+# --- identical uploads -----------------------------------------------------------------------
 
 
-def test_reuse_shows_existing_analysis_and_stems_in_song_detail(client, queue, store, clock):
+def test_identical_upload_does_not_see_the_first_uploads_artifacts(client, queue, store, clock):
     first = populate(client, queue, store, b"same-audio", "a.wav")
     clock.advance(hours=12)
 
     again = upload(client, b"same-audio", "renamed.wav")
-    assert again.status_code == 200
-    assert again.json()["reused"] is True
-    assert again.json()["id"] == first["id"]
+    assert again.status_code == 201
+    assert again.json()["id"] != first["id"]
+    assert again.json()["filename"] == "renamed.wav"
 
     artifacts = client.get(f"/songs/{again.json()['id']}").json()["artifacts"]
-    assert artifacts["analysis"] is True
-    assert artifacts["sections"] is True
-    assert artifacts["sections_edited"] is True
-    assert [s["name"] for s in artifacts["stems"]] == ["drums.wav"]
-    assert len(queue.enqueued) == 2  # reuse enqueued nothing new
+    assert artifacts["analysis"] is False
+    assert artifacts["sections_edited"] is False
+    assert artifacts["stems"] == []
 
 
 def test_after_expiry_same_hash_creates_a_fresh_song_without_old_artifacts(
@@ -170,7 +168,6 @@ def test_after_expiry_same_hash_creates_a_fresh_song_without_old_artifacts(
     second = upload(client, b"same-audio", "a.wav")
 
     assert second.status_code == 201
-    assert second.json()["reused"] is False
     assert second.json()["id"] != first["id"]
     assert client.get(f"/songs/{first['id']}").status_code == 404
     artifacts = client.get(f"/songs/{second.json()['id']}").json()["artifacts"]

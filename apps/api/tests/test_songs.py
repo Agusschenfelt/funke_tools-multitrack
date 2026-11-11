@@ -10,7 +10,6 @@ def test_upload_creates_song_and_stores_source(client, store):
 
     assert response.status_code == 201
     body = response.json()
-    assert body["reused"] is False
     assert body["filename"] == "My Song.WAV"
     assert body["sha256"] == hashlib.sha256(content).hexdigest()
     assert body["duration"] is None
@@ -28,20 +27,24 @@ def test_expires_exactly_24_hours_after_creation(client, clock, song):
     assert expires - created == timedelta(hours=24)
 
 
-def test_same_hash_is_reused_within_24_hours(client, clock, store):
-    first = upload(client, b"same-bytes", "a.wav").json()
-    clock.advance(hours=23)
+def test_identical_bytes_get_distinct_songs_with_their_own_filename_and_sections(client, store):
+    first = upload(client, b"same-bytes", "a.wav")
     second = upload(client, b"same-bytes", "renamed.mp3")
 
-    assert second.status_code == 200
-    body = second.json()
-    assert body["reused"] is True
-    assert body["id"] == first["id"]
-    assert body["filename"] == "a.wav"
-    assert store.list_names(first["id"]) == ["source.wav"]
+    assert (first.status_code, second.status_code) == (201, 201)
+    a, b = first.json(), second.json()
+    assert a["id"] != b["id"]
+    assert (a["filename"], b["filename"]) == ("a.wav", "renamed.mp3")
+    assert "reused" not in b
+    assert store.get_bytes(a["id"], "source.wav") == store.get_bytes(b["id"], "source.mp3")
+
+    edited = {"source": "a.wav", "sections": [{"name": "intro", "start": 0.0}]}
+    assert client.put(f"/songs/{a['id']}/sections", json=edited).status_code == 200
+    assert client.get(f"/songs/{b['id']}/sections").status_code == 404
+    assert client.get(f"/songs/{b['id']}").json()["artifacts"]["sections_edited"] is False
 
 
-def test_expired_song_is_not_reused(client, clock):
+def test_expired_song_does_not_affect_a_new_upload_of_the_same_bytes(client, clock):
     first = upload(client, b"same-bytes", "a.wav").json()
     clock.advance(hours=24, seconds=1)
     second = upload(client, b"same-bytes", "a.wav")

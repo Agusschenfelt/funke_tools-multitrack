@@ -18,10 +18,6 @@ class SongOut(BaseModel):
     expires_at: datetime
 
 
-class UploadOut(SongOut):
-    reused: bool
-
-
 class ArtifactLink(BaseModel):
     name: str
     url: str
