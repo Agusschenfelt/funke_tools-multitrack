@@ -178,15 +178,13 @@ def run(args: argparse.Namespace, results: list[tuple[str, float, str]]) -> None
         sf.write(state["wav"], audio, SAMPLE_RATE, subtype="PCM_16")
         console.print(f"    {len(audio) / SAMPLE_RATE:.1f}s -> {state['wav']}")
 
-    with step("2. upload and reuse", results):
+    with step("2. upload twice", results):
         _, song = client.upload(state["wav"])
-        assert not song["reused"], "first upload reported reused"
         state["song"] = song["id"]
-        _status2, again = client.upload(state["wav"])
-        assert again["reused"] and again["id"] == song["id"], (
-            f"second upload not reused: {again}"
+        _, again = client.upload(state["wav"])
+        assert again["id"] != song["id"], (
+            f"identical bytes must not share a song id: {again}"
         )
-        assert _status2 == 200, f"reused upload status {_status2}"
 
     sid = lambda: state["song"]
 
