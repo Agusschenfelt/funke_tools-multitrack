@@ -115,6 +115,26 @@ def require_source(ctx: AppContext, song: Song) -> None:
 ENQUEUE_FAILED_ERROR = "enqueue failed: the queue was unavailable (outcome unknown); submit again"
 
 
+QUEUE_FULL_RETRY_SECONDS = 60
+
+
+def _check_queue_capacity(ctx: AppContext) -> None:
+    """503 while the single worker already has more than ``max_queue_depth`` jobs waiting."""
+    cap = ctx.settings.max_queue_depth
+    if cap <= 0:
+        return
+    try:
+        depth = ctx.queue.depth()
+    except QueueUnavailable:
+        raise HTTPException(503, "job queue unavailable") from None
+    if depth > cap:
+        raise HTTPException(
+            503,
+            "job queue is full; try again later",
+            headers={"Retry-After": str(QUEUE_FULL_RETRY_SECONDS)},
+        )
+
+
 def create_job(
     session: Session,
     ctx: AppContext,
@@ -136,6 +156,7 @@ def create_job(
     untracked job, and the client simply retries to get a fresh job id. The pack row of a failed
     stagepack job is removed, since nothing can ever fill it in.
     """
+    _check_queue_capacity(ctx)
     job_id = str(uuid.uuid4())
     now = ctx.now()
     session.add(Job(id=job_id, song_id=song.id, kind=kind, status=QUEUED, created_at=now))

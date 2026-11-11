@@ -22,6 +22,7 @@ describe("messageForStatus", () => {
     [413, "límite"],
     [400, "vacío"],
     [503, "no está disponible"],
+    [429, "demasiadas"],
     [404, "24 h"],
     [409, "Esperá"],
     [500, "problema"],

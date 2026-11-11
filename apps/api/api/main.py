@@ -19,6 +19,7 @@ from api.config import Settings, cors_origins_from_env
 from api.db import make_engine, make_session_factory
 from api.deps import AppContext
 from api.queueing import JobQueue, RqQueue
+from api.ratelimit import RateLimiter, RedisRateLimiter
 from api.routers import files, jobs, songs
 from api.storage import LocalStorage
 
@@ -28,7 +29,10 @@ def utc_now() -> datetime:
 
 
 def build_context(
-    settings: Settings, queue: JobQueue | None, clock: Callable[[], datetime] | None
+    settings: Settings,
+    queue: JobQueue | None,
+    clock: Callable[[], datetime] | None,
+    limiter: RateLimiter | None,
 ) -> AppContext:
     engine = make_engine(settings.database_url)
     return AppContext(
@@ -37,6 +41,7 @@ def build_context(
         storage=LocalStorage(settings.storage_root),
         queue=queue or RqQueue(settings.redis_url, settings.result_ttl_seconds),
         clock=clock or utc_now,
+        limiter=limiter or RedisRateLimiter(settings.redis_url),
     )
 
 
@@ -45,11 +50,12 @@ def create_app(
     *,
     queue: JobQueue | None = None,
     clock: Callable[[], datetime] | None = None,
+    limiter: RateLimiter | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings is None:
-            app.state.ctx = build_context(Settings.from_env(), queue, clock)
+            app.state.ctx = build_context(Settings.from_env(), queue, clock, limiter)
         ctx = app.state.ctx
         interval = ctx.settings.cleanup_interval_seconds
         task = asyncio.create_task(cleanup_loop(ctx, interval)) if interval > 0 else None
@@ -64,7 +70,7 @@ def create_app(
 
     app = FastAPI(title="Multitrack API", version="0.1.0", lifespan=lifespan)
     if settings is not None:
-        app.state.ctx = build_context(settings, queue, clock)
+        app.state.ctx = build_context(settings, queue, clock, limiter)
     app.add_middleware(BodyLimitMiddleware)
     origins = settings.cors_origins if settings is not None else cors_origins_from_env()
     if origins:

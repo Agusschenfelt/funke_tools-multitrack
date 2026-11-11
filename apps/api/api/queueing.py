@@ -77,6 +77,10 @@ class JobQueue(Protocol):
         self, func: str, args: tuple, kwargs: dict, *, job_id: str, timeout: int
     ) -> None: ...
 
+    def depth(self) -> int:
+        """Jobs waiting in the queue (not the one running); ``QueueUnavailable`` if unreachable."""
+        ...
+
     def fetch(self, job_id: str) -> RemoteJob | None:
         """The RQ job, or None when the queue does not know it (expired or removed).
 
@@ -131,6 +135,15 @@ class RqQueue:
                 result_ttl=self.result_ttl,
                 failure_ttl=self.result_ttl,
             )
+        except RedisError as exc:
+            raise QueueUnavailable(str(exc)) from exc
+
+    def depth(self) -> int:
+        from redis.exceptions import RedisError
+        from rq import Queue
+
+        try:
+            return Queue(self.name, connection=self._conn(), serializer=SERIALIZER).count
         except RedisError as exc:
             raise QueueUnavailable(str(exc)) from exc
 

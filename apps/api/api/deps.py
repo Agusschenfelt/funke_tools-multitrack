@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,6 +14,9 @@ from api.models import Song
 from api.queueing import JobQueue
 from api.storage import LocalStorage
 
+if TYPE_CHECKING:
+    from api.ratelimit import RateLimiter
+
 
 @dataclass
 class AppContext:
@@ -22,6 +25,7 @@ class AppContext:
     storage: LocalStorage
     queue: JobQueue
     clock: Callable[[], datetime]
+    limiter: "RateLimiter"
 
     def now(self) -> datetime:
         return self.clock()

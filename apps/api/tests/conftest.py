@@ -40,6 +40,7 @@ class FakeQueue:
     enqueued: list[dict] = field(default_factory=list)
     remote: dict[str, RemoteJob] = field(default_factory=dict)
     fail_enqueue: Exception | None = None
+    queued: int = 0
 
     def enqueue(self, func, args, kwargs, *, job_id, timeout):
         if self.fail_enqueue is not None:
@@ -47,6 +48,9 @@ class FakeQueue:
         self.enqueued.append(
             {"func": func, "args": args, "kwargs": kwargs, "job_id": job_id, "timeout": timeout}
         )
+
+    def depth(self):
+        return self.queued
 
     def fetch(self, job_id):
         return self.remote.get(job_id)

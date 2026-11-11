@@ -12,6 +12,7 @@ from api import queueing
 from api import storage as names
 from api.deps import ActiveSong, Ctx, DbSession
 from api.models import SectionsState, Song
+from api.ratelimit import JobLimit, UploadLimit
 from api.schemas import (
     AnalyzeRequest,
     JobCreated,
@@ -37,7 +38,7 @@ def _clean_filename(raw: str | None) -> str:
     return name[:255]
 
 
-@router.post("/songs", response_model=UploadOut, status_code=201)
+@router.post("/songs", response_model=UploadOut, status_code=201, dependencies=[UploadLimit])
 def upload_song(file: UploadFile, response: Response, ctx: Ctx, session: DbSession) -> UploadOut:
     """Store an upload, hashing while streaming; reuse a live song with the same audio hash."""
     filename = _clean_filename(file.filename)
@@ -116,7 +117,9 @@ def _sections_sha256(ctx: Ctx, song_id: str) -> str:
         return ""
 
 
-@router.post("/songs/{song_id}/analyze", response_model=JobCreated, status_code=202)
+@router.post(
+    "/songs/{song_id}/analyze", response_model=JobCreated, status_code=202, dependencies=[JobLimit]
+)
 def analyze(
     song: ActiveSong, ctx: Ctx, session: DbSession, body: AnalyzeRequest | None = None
 ) -> JobCreated:
@@ -144,7 +147,9 @@ def analyze(
     return JobCreated(job_id=job_id)
 
 
-@router.post("/songs/{song_id}/separate", response_model=JobCreated, status_code=202)
+@router.post(
+    "/songs/{song_id}/separate", response_model=JobCreated, status_code=202, dependencies=[JobLimit]
+)
 def separate(
     song: ActiveSong, ctx: Ctx, session: DbSession, body: SeparateRequest | None = None
 ) -> JobCreated:
@@ -163,7 +168,12 @@ def separate(
     return JobCreated(job_id=job_id)
 
 
-@router.post("/songs/{song_id}/stagepack", response_model=JobCreated, status_code=202)
+@router.post(
+    "/songs/{song_id}/stagepack",
+    response_model=JobCreated,
+    status_code=202,
+    dependencies=[JobLimit],
+)
 def stagepack(song: ActiveSong, options: StagePackOptions, ctx: Ctx, session: DbSession):
     missing = [
         label

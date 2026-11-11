@@ -122,7 +122,7 @@ def main() -> None:
     from api.config import Settings
     from api.main import build_context
 
-    ctx = build_context(Settings.from_env(), None, None)
+    ctx = build_context(Settings.from_env(), None, None, None)
     report = sweep_expired(ctx)
     print(f"deleted {len(report.deleted)} expired song(s)")
     for song_id in report.deleted:

@@ -16,6 +16,10 @@ MAX_TOKEN_TTL_SECONDS = 24 * 3600
 SONG_TTL_HOURS = 24
 DEFAULT_CLEANUP_INTERVAL_SECONDS = 900
 DEFAULT_LOST_JOB_GRACE_SECONDS = 300
+DEFAULT_UPLOAD_RATE_LIMIT = 10
+DEFAULT_JOB_RATE_LIMIT = 30
+DEFAULT_MAX_QUEUE_DEPTH = 20
+RATE_LIMIT_WINDOW_SECONDS = 3600
 
 
 MIN_SECRET_LENGTH = 32
@@ -76,6 +80,15 @@ class Settings:
     cleanup_interval_seconds: int = 0
     # A non-terminal job the queue no longer knows is marked failed after this many seconds.
     lost_job_grace_seconds: int = DEFAULT_LOST_JOB_GRACE_SECONDS
+    # Per-client-IP requests allowed per ``RATE_LIMIT_WINDOW_SECONDS`` and the largest queue that
+    # still accepts new jobs; 0 disables each one. Direct construction (tests) leaves them
+    # disabled; ``from_env`` applies the defaults.
+    upload_rate_limit: int = 0
+    job_rate_limit: int = 0
+    max_queue_depth: int = 0
+    # Take the client IP from the right-most X-Forwarded-For entry (the reverse proxy's) instead of
+    # the TCP peer. Only safe when every request really passes through that proxy.
+    trust_proxy_headers: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -89,12 +102,22 @@ class Settings:
                 env.get("CLEANUP_INTERVAL_SECONDS", str(DEFAULT_CLEANUP_INTERVAL_SECONDS))
             )
             grace = int(env.get("LOST_JOB_GRACE_SECONDS", str(DEFAULT_LOST_JOB_GRACE_SECONDS)))
+            upload_limit = int(
+                env.get("UPLOAD_RATE_LIMIT_PER_HOUR", str(DEFAULT_UPLOAD_RATE_LIMIT))
+            )
+            job_limit = int(env.get("JOB_RATE_LIMIT_PER_HOUR", str(DEFAULT_JOB_RATE_LIMIT)))
+            queue_depth = int(env.get("MAX_QUEUE_DEPTH", str(DEFAULT_MAX_QUEUE_DEPTH)))
         except ValueError as exc:
             raise ConfigError(f"invalid numeric setting: {exc}") from exc
         if max_mb <= 0 or ttl <= 0:
             raise ConfigError("MAX_UPLOAD_MB and DOWNLOAD_TOKEN_TTL_SECONDS must be positive")
         if interval < 0 or grace < 0:
             raise ConfigError("CLEANUP_INTERVAL_SECONDS and LOST_JOB_GRACE_SECONDS must be >= 0")
+        if min(upload_limit, job_limit, queue_depth) < 0:
+            raise ConfigError(
+                "UPLOAD_RATE_LIMIT_PER_HOUR, JOB_RATE_LIMIT_PER_HOUR and MAX_QUEUE_DEPTH "
+                "must be >= 0 (0 disables)"
+            )
         extensions = frozenset(
             e.lower() if e.startswith(".") else f".{e.lower()}"
             for e in _csv(env.get("ALLOWED_EXTENSIONS", DEFAULT_EXTENSIONS))
@@ -110,6 +133,10 @@ class Settings:
             token_ttl_seconds=min(ttl, MAX_TOKEN_TTL_SECONDS),
             cleanup_interval_seconds=interval,
             lost_job_grace_seconds=grace,
+            upload_rate_limit=upload_limit,
+            job_rate_limit=job_limit,
+            max_queue_depth=queue_depth,
+            trust_proxy_headers=env.get("TRUST_PROXY_HEADERS", "0") == "1",
         )
 
     @property

@@ -183,6 +183,8 @@ export function messageForStatus(kind: ApiErrorKind, status: number | null): str
       return unsupportedTypeMessage();
     case 422:
       return "El servidor no aceptó los datos enviados. Revisalos y probá de nuevo.";
+    case 429:
+      return "Hiciste demasiadas solicitudes seguidas. Esperá un rato y probá de nuevo.";
     case 503:
       return "El servidor no está disponible o está ocupado. Probá de nuevo en unos minutos.";
     default:

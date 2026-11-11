@@ -29,7 +29,12 @@ Compose reads `infra/.env` (the project directory is `infra/`). Variables: `POST
 it is at least 32 characters and not a placeholder; `ALLOW_INSECURE_SIGNING_SECRET=1` bypasses the
 check for local development only), `REDIS_PASSWORD` (required; use URL-safe characters such as
 `openssl rand -hex 24`, because it is embedded in `REDIS_URL`), `CORS_ORIGINS`,
-`CLEANUP_INTERVAL_SECONDS`, `LOST_JOB_GRACE_SECONDS`.
+`CLEANUP_INTERVAL_SECONDS`, `LOST_JOB_GRACE_SECONDS`, and the abuse limits `UPLOAD_RATE_LIMIT_PER_HOUR`,
+`JOB_RATE_LIMIT_PER_HOUR` (per client IP, fixed one-hour window kept in Redis; 429 with
+`Retry-After`; 0 disables; the limiter allows requests if Redis is down), `MAX_QUEUE_DEPTH` (new jobs
+get 503 while more than this many wait; 0 disables) and `TRUST_PROXY_HEADERS` (1 reads the client
+IP from the right-most `X-Forwarded-For` entry; set it only behind a proxy you control). The dev
+compose disables the rate limits; the prod compose defaults to 10 uploads and 30 jobs per hour.
 `DATABASE_URL`, `REDIS_URL` and `STORAGE_ROOT` are derived inside the compose file so hostnames
 always match the services. `CUES_DIR` is optional and left unset: the worker image ships
 `assets/cues` and audio-core finds it relative to its source tree (`CUES_DIR` points at a single
